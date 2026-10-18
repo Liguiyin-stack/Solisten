@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>$(WindowsTfm)</TargetFramework>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <RootNamespace>Solisten.Library</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Solisten.Core\Solisten.Core.csproj" />
+    <PackageReference Include="TagLibSharp" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="Dapper" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\pinyin-4e00-9fff.txt" LogicalName="Solisten.Library.pinyin" />
+    <InternalsVisibleTo Include="Solisten.Library.Tests" />
+  </ItemGroup>
+</Project>

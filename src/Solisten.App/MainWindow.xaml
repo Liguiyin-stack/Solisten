@@ -1,0 +1,247 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="Solisten.App.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:progress="using:Solisten.Rendering.Progress"
+    xmlns:space="using:Solisten.Rendering.Space"
+    xmlns:vm="using:Solisten.App.ViewModels"
+    xmlns:local="using:Solisten.App"
+    Title="Solisten">
+
+    <Grid x:Name="Root" Background="#FF16171A" PointerMoved="OnRootPointerMoved" PointerExited="OnRootPointerExited" PreviewKeyDown="OnRootPreviewKeyDown" IsTabStop="True" AllowFocusOnInteraction="True">
+        <Grid.Resources>
+            <!-- 所有文字与图标共用一支画笔，切歌时只改它的颜色（Palette.TextOnBase，保证 4.5:1）。 -->
+            <SolidColorBrush x:Key="InkBrush" Color="White" />
+            <SolidColorBrush x:Key="InkSoftBrush" Color="White" Opacity="0.72" />
+            <!-- 高对比度时侧边面板与导航带的实心背景（平时透明，玻璃由聆听空间绘制） -->
+            <SolidColorBrush x:Key="ScrimBrush" Color="Transparent" />
+
+            <Style x:Key="CanvasButton" TargetType="Button">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+                <Setter Property="Padding" Value="10" />
+                <Setter Property="CornerRadius" Value="20" />
+                <Setter Property="IsTabStop" Value="False" />
+            </Style>
+            <DataTemplate x:Key="RibbonCard" x:DataType="vm:RibbonItem">
+                <Grid Width="132" Margin="{x:Bind local:Ui.CardMargin(GroupBreak)}" Opacity="{x:Bind local:Ui.AvailableOpacity(Available)}" Background="Transparent">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="22" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="{x:Bind GroupLabel}" Visibility="{x:Bind local:Ui.NotEmpty(GroupLabel)}" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{StaticResource InkSoftBrush}" TextTrimming="CharacterEllipsis" MaxWidth="260" HorizontalAlignment="Left" />
+                    <!-- Browse Lens 观察框：只改边框，不放大、不居中伪装成正在播放 -->
+                    <Border Grid.Row="1" Width="120" Height="120" CornerRadius="8" Padding="3"
+                            BorderBrush="{StaticResource InkBrush}" BorderThickness="{x:Bind local:Ui.LensThickness(IsFocused), Mode=OneWay}">
+                        <Grid CornerRadius="5" Background="#33FFFFFF">
+                            <FontIcon Glyph="&#xE8D6;" FontSize="28" Foreground="{StaticResource InkSoftBrush}" Visibility="{x:Bind local:Ui.Empty(ThumbPath), Mode=OneWay}" />
+                            <Image Source="{x:Bind local:Ui.Thumb(ThumbPath), Mode=OneWay}" Stretch="UniformToFill" />
+                            <!-- ◉ 只属于 Playing Anchor -->
+                            <Border Visibility="{x:Bind local:Ui.Visible(IsPlaying), Mode=OneWay}" Background="#CC000000" CornerRadius="10"
+                                    HorizontalAlignment="Left" VerticalAlignment="Top" Margin="6" Padding="6,1,7,2">
+                                <TextBlock Text="◉ 正在播放" FontSize="11" Foreground="White" />
+                            </Border>
+                        </Grid>
+                    </Border>
+                    <TextBlock Grid.Row="2" Text="{x:Bind Title}" Margin="4,6,4,0" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource InkBrush}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Grid.Row="3" Text="{x:Bind Artist}" Margin="4,0" FontSize="12" Foreground="{StaticResource InkSoftBrush}" TextTrimming="CharacterEllipsis" />
+                </Grid>
+            </DataTemplate>
+        </Grid.Resources>
+
+        <!-- 上方：动态聆听空间（整个窗口的底层），负责氛围 -->
+        <space:SoundSpace x:Name="Space" />
+
+        <!-- 标题栏拖动区（系统按钮保留在右上角） -->
+        <Grid x:Name="TitleBar" Height="40" VerticalAlignment="Top" Background="Transparent">
+            <TextBlock Text="Solisten" Margin="16,0,0,0" VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource InkSoftBrush}" />
+        </Grid>
+
+        <!-- ───────── 聆听层：只面对这一首歌 ───────── -->
+        <Grid x:Name="CanvasLayer" Margin="0,40,0,0" Visibility="{x:Bind local:Ui.Collapsed(ViewModel.IsLibraryEmpty), Mode=OneWay}">
+            <Grid.OpacityTransition>
+                <ScalarTransition Duration="0:0:0.25" />
+            </Grid.OpacityTransition>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" MinHeight="24" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" MinHeight="160" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="20" />
+            </Grid.RowDefinitions>
+
+            <!-- IdentityAnchor -->
+            <StackPanel x:Name="Identity" Grid.Row="1" HorizontalAlignment="Center" Margin="32,0" MaxWidth="900" Tapped="OnIdentityTapped">
+                <TextBlock x:Name="TitleText" Text="{x:Bind ViewModel.Title, Mode=OneWay}" FontFamily="{StaticResource CanvasFont}" FontSize="38" FontWeight="SemiBold"
+                           Foreground="{StaticResource InkBrush}" TextAlignment="Center" TextTrimming="CharacterEllipsis" MaxLines="2" TextWrapping="WrapWholeWords" />
+                <TextBlock x:Name="SubtitleText" Text="{x:Bind ViewModel.Subtitle, Mode=OneWay}" FontSize="17" Margin="0,6,0,0"
+                           Foreground="{StaticResource InkSoftBrush}" TextAlignment="Center" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+
+            <!-- 舞台：动态封面在这里（空元素，只用来告诉空间封面的位置和大小） -->
+            <Border x:Name="Stage" Grid.Row="2" Background="Transparent" IsHitTestVisible="False" />
+
+            <!-- 极简播放进度：3px 细线，悬停变粗，点击或拖动跳转 -->
+            <progress:ProgressLine x:Name="Progress" Grid.Row="3" Height="56" />
+
+            <!-- 时间：常驻，居中在进度线下方 -->
+            <TextBlock x:Name="TimeLabel" Grid.Row="4" Text="{x:Bind ViewModel.TimeText, Mode=OneWay}" HorizontalAlignment="Center" TextAlignment="Center"
+                       FontSize="14" Foreground="{StaticResource InkBrush}" Margin="0,0,0,6" />
+
+            <!-- ActionAnchor：播放控制只在有操作时出现，无操作时整行淡出（包括播放/暂停按钮） -->
+            <StackPanel x:Name="RevealBar" Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="2" Opacity="0" IsHitTestVisible="False">
+                <StackPanel.OpacityTransition>
+                    <ScalarTransition />
+                </StackPanel.OpacityTransition>
+                <Button Style="{StaticResource CanvasButton}" Click="OnFolderClick" ToolTipService.ToolTip="添加音乐文件夹">
+                    <FontIcon Glyph="&#xE8F4;" FontSize="16" />
+                </Button>
+                <Button Style="{StaticResource CanvasButton}" Click="OnNavigateClick" ToolTipService.ToolTip="寻找下一首 (↑)">
+                    <FontIcon Glyph="&#xE8FD;" FontSize="16" />
+                </Button>
+                <Button Style="{StaticResource CanvasButton}" Click="OnPreviousClick" ToolTipService.ToolTip="上一首 (Ctrl+←)">
+                    <FontIcon Glyph="&#xE892;" FontSize="18" />
+                </Button>
+                <Button x:Name="PlayButton" Style="{StaticResource CanvasButton}" Padding="14" CornerRadius="26" Click="OnPlayClick" ToolTipService.ToolTip="播放 / 暂停 (Space)"
+                        AutomationProperties.Name="播放 / 暂停">
+                    <FontIcon x:Name="PlayGlyph" Glyph="{x:Bind local:Ui.PlayGlyph(ViewModel.IsPaused), Mode=OneWay}" FontSize="22" />
+                </Button>
+                <Button Style="{StaticResource CanvasButton}" Click="OnNextClick" ToolTipService.ToolTip="下一首 (Ctrl+→)">
+                    <FontIcon Glyph="&#xE893;" FontSize="18" />
+                </Button>
+                <Button Style="{StaticResource CanvasButton}" Click="OnShuffleClick" ToolTipService.ToolTip="在当前范围内随机 (S)" AutomationProperties.Name="在当前范围内随机">
+                    <FontIcon Glyph="&#xE8B1;" FontSize="16" />
+                </Button>
+                <ToggleButton x:Name="RepeatButton" IsChecked="{x:Bind ViewModel.IsRepeatOne, Mode=OneWay}" Click="OnRepeatClick" Background="Transparent" BorderThickness="0"
+                              Foreground="{StaticResource InkBrush}" CornerRadius="20" Padding="10" IsTabStop="False" ToolTipService.ToolTip="单曲循环 (R)">
+                    <FontIcon Glyph="&#xE8ED;" FontSize="16" />
+                </ToggleButton>
+                <FontIcon x:Name="VolumeIcon" Glyph="&#xE767;" FontSize="16" Foreground="{StaticResource InkBrush}" Margin="8,0,4,0" VerticalAlignment="Center" />
+                <Slider x:Name="VolumeSlider" Width="110" Minimum="0" Maximum="1" StepFrequency="0.01" VerticalAlignment="Center"
+                        ValueChanged="OnVolumeChanged" IsTabStop="False" IsThumbToolTipEnabled="False" />
+                <Button Style="{StaticResource CanvasButton}" Click="OnInfoClick" ToolTipService.ToolTip="资料 (↓)">
+                    <FontIcon Glyph="&#xE946;" FontSize="16" />
+                </Button>
+                <Button Style="{StaticResource CanvasButton}" Click="OnSettingsClick" ToolTipService.ToolTip="设置 (Ctrl+,)" AutomationProperties.Name="设置">
+                    <FontIcon Glyph="&#xE713;" FontSize="16" />
+                </Button>
+            </StackPanel>
+        </Grid>
+
+        <!-- ───────── 导航层：单曲上下文带 ───────── -->
+        <Grid x:Name="NavigateLayer" Visibility="Collapsed" VerticalAlignment="Bottom" Margin="0" Padding="0,16,0,22" RowSpacing="10"
+              CornerRadius="22,22,0,0" Background="Transparent">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <!-- 柔光玻璃本身由聆听空间在后面绘制（模糊这首歌的色彩空间）；这里只画上沿的一道光线 -->
+            <Border Grid.RowSpan="2" Margin="24,-16,24,0" Height="1" VerticalAlignment="Top" Background="{StaticResource GlassEdgeBrush}" IsHitTestVisible="False" />
+            <Grid Margin="40,0" ColumnSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <AutoSuggestBox x:Name="SearchBox" Width="280" PlaceholderText="搜索标题、艺术家、专辑或拼音（/）" QueryIcon="Find"
+                                TextChanged="OnSearchTextChanged" />
+                <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.RibbonStatus, Mode=OneWay}" VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource InkSoftBrush}" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+                    <ComboBox x:Name="ArrangementBox" SelectionChanged="OnArrangementChanged" MinWidth="120" IsTabStop="False">
+                        <ComboBoxItem Content="文件夹" Tag="Folder" />
+                        <ComboBoxItem Content="专辑" Tag="Album" />
+                        <ComboBoxItem Content="聆听记录" Tag="Listening" />
+                    </ComboBox>
+                    <TextBlock Text="Enter 播放 · Esc 返回 · . 回到正在播放" VerticalAlignment="Center" FontSize="12" Margin="12,0,0,0" Foreground="{StaticResource InkSoftBrush}" />
+                </StackPanel>
+            </Grid>
+            <ScrollViewer x:Name="RibbonScroller" Grid.Row="1" HorizontalScrollMode="Enabled" HorizontalScrollBarVisibility="Hidden"
+                          VerticalScrollMode="Disabled" VerticalScrollBarVisibility="Disabled" Padding="40,0" IsTabStop="False"
+                          PointerWheelChanged="OnRibbonWheel">
+                <ItemsRepeater x:Name="Ribbon" ItemsSource="{x:Bind ViewModel.RibbonItems}" ItemTemplate="{StaticResource RibbonCard}"
+                               Tapped="OnRibbonTapped" DoubleTapped="OnRibbonDoubleTapped">
+                    <ItemsRepeater.Layout>
+                        <StackLayout Orientation="Horizontal" Spacing="10" />
+                    </ItemsRepeater.Layout>
+                </ItemsRepeater>
+            </ScrollViewer>
+        </Grid>
+
+        <!-- ───────── 信息层：右侧的柔光玻璃薄片，贴住窗口右侧和底部 ───────── -->
+        <Grid x:Name="InfoLayer" Visibility="Collapsed" HorizontalAlignment="Right" VerticalAlignment="Stretch" Margin="0,40,0,0"
+              Width="420" CornerRadius="22,0,0,0" Background="{StaticResource ScrimBrush}">
+            <Border Height="1" VerticalAlignment="Top" Margin="22,0,0,0" Background="{StaticResource GlassTopEdgeBrush}" IsHitTestVisible="False" />
+            <Border Width="1" HorizontalAlignment="Left" Margin="0,22,0,0" Background="{StaticResource GlassSideEdgeBrush}" IsHitTestVisible="False" />
+            <ScrollViewer Padding="24,20,24,20" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Spacing="10">
+                        <Grid>
+                            <TextBlock Text="资料" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource InkBrush}" />
+                            <Button Style="{StaticResource CanvasButton}" HorizontalAlignment="Right" Padding="6" Click="OnInfoCloseClick">
+                                <FontIcon Glyph="&#xE711;" FontSize="12" />
+                            </Button>
+                        </Grid>
+                        <TextBlock x:Name="InfoPath" FontSize="12" TextWrapping="Wrap" IsTextSelectionEnabled="True" Foreground="{StaticResource InkSoftBrush}" />
+                        <TextBlock x:Name="InfoFormat" FontSize="13" TextWrapping="Wrap" Foreground="{StaticResource InkBrush}" />
+                        <TextBox x:Name="InfoTags" Header="标签（逗号分隔）" LostFocus="OnTagsLostFocus" />
+                        <TextBox x:Name="InfoNote" Header="备注" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="64" LostFocus="OnNoteLostFocus" />
+                        <TextBlock x:Name="InfoMarkersHint" FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource InkSoftBrush}" />
+                        <ItemsControl x:Name="InfoMarkerList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid ColumnSpacing="4" Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Button Content="{Binding TimeText}" Click="OnMarkerSeekClick" MinWidth="64" Padding="8,4"
+                                                ToolTipService.ToolTip="跳到这个标记" AutomationProperties.Name="{Binding SeekName}" />
+                                        <TextBox Grid.Column="1" Text="{Binding Label}" PlaceholderText="命名这个标记" LostFocus="OnMarkerLabelLostFocus"
+                                                 AutomationProperties.Name="{Binding LabelName}" />
+                                        <Button Grid.Column="2" Click="OnMarkerDeleteClick" Padding="8" Background="Transparent" BorderThickness="0"
+                                                ToolTipService.ToolTip="删除标记" AutomationProperties.Name="{Binding DeleteName}">
+                                            <FontIcon Glyph="&#xE74D;" FontSize="13" />
+                                        </Button>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="在资源管理器中显示" Click="OnRevealInExplorer" />
+                            <ToggleButton x:Name="FavoriteButton" Content="收藏" Click="OnFavoriteClick" />
+                        </StackPanel>
+                    </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <!-- ───────── 曲库为空：引导 ───────── -->
+        <StackPanel x:Name="EmptyGuide" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16"
+                    Visibility="{x:Bind local:Ui.Visible(ViewModel.IsLibraryEmpty), Mode=OneWay}">
+            <TextBlock Text="一首歌，一个空间" FontFamily="{StaticResource CanvasFont}" FontSize="34" FontWeight="SemiBold" HorizontalAlignment="Center" Foreground="{StaticResource InkBrush}" />
+            <TextBlock Text="选择一个本地音乐文件夹。Solisten 只读取你的文件，不联网，也不改写它们。" FontSize="14" HorizontalAlignment="Center" Foreground="{StaticResource InkSoftBrush}" />
+            <Button Content="选择音乐文件夹" HorizontalAlignment="Center" Padding="20,10" Click="OnFolderClick" Style="{StaticResource AccentButtonStyle}" />
+            <TextBlock x:Name="ScanText" FontSize="12" HorizontalAlignment="Center" Foreground="{StaticResource InkSoftBrush}" />
+        </StackPanel>
+
+        <!-- ───────── 设置：附着在右侧的薄片 ───────── -->
+        <local:SettingsPanel x:Name="SettingsSheet" Visibility="Collapsed" HorizontalAlignment="Right" VerticalAlignment="Stretch"
+                             Width="420" Margin="0,40,0,0" />
+
+        <!-- 轻提示 -->
+        <Border x:Name="Toast" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,150" Padding="18,9" CornerRadius="18"
+                Background="{ThemeResource GlassToastBackground}" BorderBrush="{ThemeResource GlassToastBorder}" BorderThickness="1"
+                Opacity="0" IsHitTestVisible="False">
+            <Border.OpacityTransition>
+                <ScalarTransition />
+            </Border.OpacityTransition>
+            <TextBlock x:Name="ToastText" Foreground="{StaticResource InkBrush}" FontSize="13" />
+        </Border>
+    </Grid>
+</Window>

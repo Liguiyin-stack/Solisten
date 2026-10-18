@@ -1,0 +1,17 @@
+Solisten 使用以下开源组件 / Solisten uses the following open-source components.
+
+FFmpeg (libavcodec, libavformat, libavutil, libswresample)
+  License: GNU Lesser General Public License v2.1 or later
+  Used as unmodified shared libraries (dynamic linking). See FFmpeg-LICENSE.txt.
+  Source: https://ffmpeg.org/  Build: https://github.com/BtbN/FFmpeg-Builds
+  You may replace the avcodec/avformat/avutil/swresample DLLs in the "ffmpeg" folder with your own build.
+
+TagLib# (TagLibSharp)            LGPL 2.1        https://github.com/mono/taglib-sharp
+Win2D                            MIT             https://github.com/microsoft/Win2D
+Windows App SDK / WinUI 3        MIT             https://github.com/microsoft/WindowsAppSDK
+CommunityToolkit.Mvvm            MIT             https://github.com/CommunityToolkit/dotnet
+Microsoft.Data.Sqlite            MIT             https://github.com/dotnet/efcore
+SQLite                           Public domain   https://sqlite.org/
+Dapper                           Apache 2.0      https://github.com/DapperLib/Dapper
+NAudio (NAudio.Wasapi)           MIT             https://github.com/naudio/NAudio
+pinyin-data                      MIT             https://github.com/mozillazg/pinyin-data  (see pinyin-data-LICENSE.txt)

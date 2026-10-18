@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>$(WindowsTfm)</TargetFramework>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <RootNamespace>Solisten.Audio</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Solisten.Core\Solisten.Core.csproj" />
+    <PackageReference Include="FFmpeg.AutoGen" />
+    <PackageReference Include="NAudio.Wasapi" />
+    <InternalsVisibleTo Include="Solisten.Audio.Tests" />
+  </ItemGroup>
+  <!-- FFmpeg 共享库（LGPL，动态链接）：scripts/fetch-ffmpeg.sh 下载到 external/ffmpeg/x64 -->
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)..\..\external\ffmpeg\x64\*.dll" Link="ffmpeg\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+</Project>

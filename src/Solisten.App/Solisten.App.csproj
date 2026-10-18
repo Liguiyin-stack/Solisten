@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>$(WindowsTfm)</TargetFramework>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <RootNamespace>Solisten.App</RootNamespace>
+    <AssemblyName>Solisten</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <Platforms>x64;ARM64</Platforms>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
+    <Platform Condition="'$(Platform)' == '' Or '$(Platform)' == 'AnyCPU'">x64</Platform>
+    <DefaultLanguage>zh-CN</DefaultLanguage>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- 自定义 Program.Main：先判断单实例再启动 XAML -->
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Solisten.Core\Solisten.Core.csproj" />
+    <ProjectReference Include="..\Solisten.Audio\Solisten.Audio.csproj" />
+    <ProjectReference Include="..\Solisten.Library\Solisten.Library.csproj" />
+    <ProjectReference Include="..\Solisten.Rendering\Solisten.Rendering.csproj" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" />
+    <PackageReference Include="Microsoft.Graphics.Win2D" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+  </ItemGroup>
+  <!-- 许可证：设置 → 关于 → 查看许可证 -->
+  <ItemGroup>
+    <None Include="licenses\THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\external\ffmpeg\LICENSE.txt" Link="licenses\FFmpeg-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\..\external\ffmpeg\LICENSE.txt')" />
+    <None Include="..\Solisten.Library\Resources\pinyin-data.LICENSE" Link="licenses\pinyin-data-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
