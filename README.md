@@ -9,7 +9,9 @@
 Solisten 把正在播放的那首歌放在画面中央：封面随音乐呼吸、起伏，色彩和光粒子从封面里流出来；
 右侧是整屏滚动的歌词。本地音乐完全离线播放，也可以登录网易云音乐，同步歌单、在线播放。
 
-![screenshot](D:\PycharmProject\Solisten\docs\images\screenshot.png)
+<p align="center">
+  <img src="docs/images/screenshot.png" width="860" alt="Solisten 播放界面：动态封面与整屏歌词" />
+</p>
 
 ## 下载安装
 
