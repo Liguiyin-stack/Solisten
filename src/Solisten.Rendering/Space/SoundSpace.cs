@@ -178,6 +178,18 @@ public sealed partial class SoundSpace : UserControl
         if (_position?.Invoke().Playing ?? false) Wake();
     }
 
+    private volatile SoundFeatures? _liveFeatures;
+
+    /// <summary>
+    /// 实时音频特征（边播边分析）：当前场景没有离线特征时用它驱动空间，例如在线歌曲第一次播放。
+    /// 可以在任意线程设置；切到另一首歌时由调用方清空。
+    /// </summary>
+    public SoundFeatures? LiveFeatures
+    {
+        get => _liveFeatures;
+        set => _liveFeatures = value;
+    }
+
     /// <summary>切换到一首歌的空间。transition 为 false 时（例如分析完成后更新颜色）快速过渡。</summary>
     public void ShowScene(SpaceScene scene, bool transition)
     {
@@ -287,7 +299,7 @@ public sealed partial class SoundSpace : UserControl
         float pxr = Volatile.Read(ref _pointerX), pyr = Volatile.Read(ref _pointerY);
         var idle = Stopwatch.GetElapsedTime(Interlocked.Read(ref _lastPointerMove));
         var input = new SpaceInput(pos, playing, _mode, _reduceMotion, float.IsNaN(pxr) ? null : new Vector2(pxr, pyr), idle);
-        _dynamics.Features = _current.Scene.Features;
+        _dynamics.Features = _current.Scene.Features ?? _liveFeatures;
         var frame = _dynamics.Step(input, dt);
         float spaceDt = frame.Time - _lastSpaceTime;
         _lastSpaceTime = frame.Time;

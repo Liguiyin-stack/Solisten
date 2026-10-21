@@ -115,6 +115,19 @@ public sealed class EngineTests : IDisposable
     }
 
     [Fact]
+    public void Clock_RunsForOnlineTracksWithNegativeIds()
+    {
+        // 在线曲目的编号是负数：时钟不能把它当成"没有曲目"（否则进度停在 0、聆听空间认为没有在播放）。
+        var path = TestAudio.WriteWav(Path.Combine(_dir, "n.wav"), TestAudio.Stereo(TestAudio.Rate * 10));
+        _engine.Load(new TrackId(-344435), path, TimeSpan.FromSeconds(1), paused: false);
+        Thread.Sleep(200);
+        var c = _engine.Clock;
+        Assert.Equal(new TrackId(-344435), c.Track);
+        Assert.True(c.IsRunning);
+        Assert.True(c.Position > TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
     public void Clock_TracksPlaybackAndSeek()
     {
         var path = TestAudio.WriteWav(Path.Combine(_dir, "s.wav"), TestAudio.Stereo(TestAudio.Rate * 10));
@@ -141,6 +154,32 @@ public sealed class EngineTests : IDisposable
     {
         _engine.Load(new TrackId(9), Path.Combine(_dir, "missing.wav"), TimeSpan.Zero, paused: false);
         Assert.Equal("failed:9", NextEvent());
+    }
+
+    private sealed class RecordingTap : Solisten.Core.Audio.IDecodeTap
+    {
+        public readonly ConcurrentQueue<(TrackId Track, long Start, int Frames)> Chunks = new();
+        public readonly ConcurrentQueue<TrackId> Ends = new();
+        public void Decoded(TrackId track, long startFrame, ReadOnlySpan<float> interleaved, int sampleRate, int channels) =>
+            Chunks.Enqueue((track, startFrame, interleaved.Length / channels));
+        public void Ended(TrackId track) => Ends.Enqueue(track);
+    }
+
+    [Fact]
+    public void Tap_ReceivesContiguousChunksWithTimelinePositions_AndEnd()
+    {
+        var path = TestAudio.WriteWav(Path.Combine(_dir, "t.wav"), TestAudio.Stereo(48000));
+        var tap = new RecordingTap();
+        _engine.Tap = tap;
+        _engine.Load(new TrackId(-5), path, TimeSpan.FromSeconds(0.25), paused: false);
+        Assert.Equal("ended:-5", NextEvent());
+
+        var chunks = tap.Chunks.ToArray();
+        Assert.All(chunks, c => Assert.Equal(new TrackId(-5), c.Track));
+        Assert.Equal(12000, chunks[0].Start); // 从 0.25 秒开始
+        for (int i = 1; i < chunks.Length; i++) Assert.Equal(chunks[i - 1].Start + chunks[i - 1].Frames, chunks[i].Start);
+        Assert.Equal(48000, chunks[^1].Start + chunks[^1].Frames);
+        Assert.Equal([new TrackId(-5)], tap.Ends);
     }
 
     [Fact]

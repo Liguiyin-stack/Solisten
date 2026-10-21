@@ -23,6 +23,7 @@
     <ProjectReference Include="..\Solisten.Audio\Solisten.Audio.csproj" />
     <ProjectReference Include="..\Solisten.Library\Solisten.Library.csproj" />
     <ProjectReference Include="..\Solisten.Rendering\Solisten.Rendering.csproj" />
+    <ProjectReference Include="..\Solisten.Integrations.NetEase\Solisten.Integrations.NetEase.csproj" />
     <PackageReference Include="Microsoft.WindowsAppSDK" />
     <PackageReference Include="Microsoft.Graphics.Win2D" />
     <PackageReference Include="CommunityToolkit.Mvvm" />

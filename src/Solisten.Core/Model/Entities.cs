@@ -2,9 +2,13 @@ using System.Collections.Immutable;
 
 namespace Solisten.Core.Model;
 
+/// <summary>本地曲目的编号是数据库主键（正数）；在线曲目（网易云）用负数，取反即远端歌曲编号。</summary>
 public readonly record struct TrackId(long Value)
 {
     public override string ToString() => Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>在线曲目：没有本地文件，播放时才向来源请求临时播放地址；不写入曲库数据库。</summary>
+    public bool IsRemote => Value < 0;
 }
 
 public sealed record TrackMeta(
@@ -39,15 +43,18 @@ public sealed record UserTrackData(int PlayCount, DateTimeOffset? LastPlayedAt, 
     public static readonly UserTrackData Empty = new(0, null, false);
 }
 
-public enum Arrangement { Folder, Album, Listening }
+/// <summary>Playlists：外部来源（网易云）的歌单，每个歌单一个分组；内容由宿主提供，不由本地曲目计算。</summary>
+public enum Arrangement { Folder, Album, Listening, Playlists }
 
-public enum ScopeKind { All, Group, Search }
+/// <summary>Remote：外部来源（例如网易云歌单）在本地曲库中的投影，只包含已匹配的本地曲目。</summary>
+public enum ScopeKind { All, Group, Search, Remote }
 
 public readonly record struct ScopeKey(ScopeKind Kind, string Key)
 {
     public static readonly ScopeKey All = new(ScopeKind.All, "");
     public static ScopeKey Group(string key) => new(ScopeKind.Group, key);
     public static ScopeKey Search(string query) => new(ScopeKind.Search, query);
+    public static ScopeKey Remote(string key) => new(ScopeKind.Remote, key);
 }
 
 /// <summary>上下文内的一段连续分组（专辑/文件夹/聆听记录分段）。</summary>

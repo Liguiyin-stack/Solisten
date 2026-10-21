@@ -51,6 +51,7 @@ public static class Reducer
         ClearQuery => DoClearQuery(s),
         SearchResultsArrived a => DoSearchResults(s, a.Query, a.Results),
         RevealTrack a => DoRevealTrack(s, a.Track),
+        ShowContext a => DoShowContext(s, a.Context, a.FocusIndex),
 
         EnterInfo => s.Layer == Layer.Listen && s.Playing is not null ? s with { Layer = Layer.Info } : s,
         ExitLayer => s.Layer == Layer.Listen ? s : s with { Layer = Layer.Listen },
@@ -62,8 +63,8 @@ public static class Reducer
         AddMarker a => DoAddMarker(s, a.Position, a.Label, fx),
         RenameMarker a => Emit(s, fx, new SaveMarkerLabel(a.Track, a.MarkerId, string.IsNullOrWhiteSpace(a.Label) ? null : a.Label.Trim())),
         DeleteMarker a => Emit(s, fx, new RemoveMarker(a.Track, a.MarkerId)),
-        SetTags a => Emit(s, fx, new SaveTags(a.Track, a.Tags)),
-        SetNote a => Emit(s, fx, new SaveNote(a.Track, a.Note)),
+        SetTags a => a.Track.IsRemote ? s : Emit(s, fx, new SaveTags(a.Track, a.Tags)),
+        SetNote a => a.Track.IsRemote ? s : Emit(s, fx, new SaveNote(a.Track, a.Note)),
         ToggleFavorite a => DoToggleFavorite(s, a.Track, fx),
 
         LibraryLoaded a => DoLibraryLoaded(s, a.Library, a.Session, fx),
@@ -313,7 +314,7 @@ public static class Reducer
             if (listened > PlayCountAbsolute || (duration > TimeSpan.Zero && listened.Ticks * 2 > duration.Ticks))
             {
                 counted = true;
-                fx.Add(new RecordPlay(p.Track));
+                if (!p.Track.IsRemote) fx.Add(new RecordPlay(p.Track)); // 播放次数只记录本地曲目
             }
         }
 
@@ -400,6 +401,8 @@ public static class Reducer
     {
         if (s.Library.IsEmpty) return s;
         if (s.Layer == Layer.Navigate) return s;
+        // 外部歌单为空（例如退出了网易云）：回到文件夹排列，导航层总有内容可看。
+        if (s.Arrangement == Arrangement.Playlists && s.Library.Playlists.IsEmpty) s = s with { Arrangement = Arrangement.Folder };
 
         var focus = FocusOnPlaying(s);
         if (focus is null)
@@ -570,11 +573,58 @@ public static class Reducer
         return s with { Layer = Layer.Navigate, Focus = focus };
     }
 
+    /// <summary>
+    /// 外部来源作为 BrowseContext：焦点放在 <paramref name="focusIndex"/>，否则放在正在播放的歌（如果在里面）或第一首；
+    /// 是否播放由用户确认。不在曲库中的编号直接丢弃（逐个分组重新计算范围，空分组去掉）。
+    /// </summary>
+    private static AppState DoShowContext(AppState s, PlaybackContext ctx, int focusIndex)
+    {
+        ctx = KnownOnly(s.Library, ctx, ref focusIndex);
+        if (ctx.IsEmpty) return s;
+
+        int idx = focusIndex >= 0 && focusIndex < ctx.Count ? focusIndex : s.Playing is { } p ? ctx.IndexOf(p.Track) : -1;
+        if (idx < 0) idx = 0;
+        return s with { Layer = Layer.Navigate, Focus = new FocusState(ctx.Order[idx], idx, ctx, ZoomLevel.Track, null) };
+    }
+
+    private static PlaybackContext KnownOnly(LibraryIndex library, PlaybackContext ctx, ref int focusIndex)
+    {
+        var order = ctx.Order.OrEmpty();
+        if (order.All(id => library.Find(id) is not null)) return ctx;
+
+        var kept = ImmutableArray.CreateBuilder<TrackId>();
+        var groups = ImmutableArray.CreateBuilder<ContextGroup>();
+        int focus = focusIndex, newFocus = -1;
+        void Keep(int i)
+        {
+            if (library.Find(order[i]) is null) return;
+            if (i == focus || (newFocus < 0 && i > focus && focus >= 0)) newFocus = kept.Count;
+            kept.Add(order[i]);
+        }
+
+        if (ctx.Groups.IsDefaultOrEmpty)
+        {
+            for (int i = 0; i < order.Length; i++) Keep(i);
+        }
+        else
+        {
+            foreach (var g in ctx.Groups)
+            {
+                int start = kept.Count;
+                for (int i = g.Start; i < g.End && i < order.Length; i++) Keep(i);
+                if (kept.Count > start) groups.Add(g with { Start = start, Count = kept.Count - start });
+            }
+        }
+        focusIndex = newFocus;
+        return ctx with { Order = kept.ToImmutable(), Groups = groups.ToImmutable() };
+    }
+
     // ───────────────────────── 个人痕迹 ─────────────────────────
 
     private static AppState DoAddMarker(AppState s, TimeSpan position, string? label, ImmutableArray<Effect>.Builder fx)
     {
         if (s.Playing is null) return s;
+        if (s.Playing.Track.IsRemote) return Emit(s, fx, new ShowToast("在线歌曲不能打标记"));
         fx.Add(new SaveMarker(s.Playing.Track, Clamp(s, s.Playing.Track, position), label));
         return s;
     }
@@ -582,6 +632,7 @@ public static class Reducer
     private static AppState DoToggleFavorite(AppState s, TrackId track, ImmutableArray<Effect>.Builder fx)
     {
         if (s.Library.Find(track) is null) return s;
+        if (track.IsRemote) return Emit(s, fx, new ShowToast("在线歌曲不能收藏，请在网易云音乐中收藏"));
         var user = s.Library.User(track);
         var updated = user with { Favorite = !user.Favorite };
         fx.Add(new SaveFavorite(track, updated.Favorite));

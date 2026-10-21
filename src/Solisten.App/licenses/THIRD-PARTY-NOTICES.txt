@@ -15,3 +15,4 @@ SQLite                           Public domain   https://sqlite.org/
 Dapper                           Apache 2.0      https://github.com/DapperLib/Dapper
 NAudio (NAudio.Wasapi)           MIT             https://github.com/naudio/NAudio
 pinyin-data                      MIT             https://github.com/mozillazg/pinyin-data  (see pinyin-data-LICENSE.txt)
+QRCoder                          MIT             https://github.com/codebude/QRCoder

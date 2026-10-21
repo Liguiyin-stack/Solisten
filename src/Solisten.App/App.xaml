@@ -41,6 +41,11 @@
                     <SolidColorBrush x:Key="ExpanderContentBorderBrush" Color="#1AFFFFFF" />
                     <SolidColorBrush x:Key="GlassToastBackground" Color="#99101114" />
                     <SolidColorBrush x:Key="GlassToastBorder" Color="#26FFFFFF" />
+                    <SolidColorBrush x:Key="SettingsCardBackground" Color="#0DFFFFFF" />
+                    <SolidColorBrush x:Key="SettingsCardBorder" Color="#14FFFFFF" />
+                    <SolidColorBrush x:Key="SettingsDivider" Color="#10FFFFFF" />
+                    <SolidColorBrush x:Key="SettingsBadgeBackground" Color="#1F6CCB5F" />
+                    <SolidColorBrush x:Key="SettingsBadgeForeground" Color="#FF8EDB83" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Light">
                     <SolidColorBrush x:Key="ButtonBackground" Color="#66FFFFFF" />
@@ -70,10 +75,20 @@
                     <SolidColorBrush x:Key="ExpanderContentBorderBrush" Color="#1A000000" />
                     <SolidColorBrush x:Key="GlassToastBackground" Color="#B3FAFAF8" />
                     <SolidColorBrush x:Key="GlassToastBorder" Color="#1F000000" />
+                    <SolidColorBrush x:Key="SettingsCardBackground" Color="#59FFFFFF" />
+                    <SolidColorBrush x:Key="SettingsCardBorder" Color="#14000000" />
+                    <SolidColorBrush x:Key="SettingsDivider" Color="#10000000" />
+                    <SolidColorBrush x:Key="SettingsBadgeBackground" Color="#1F107C10" />
+                    <SolidColorBrush x:Key="SettingsBadgeForeground" Color="#FF0F7B0F" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="HighContrast">
                     <SolidColorBrush x:Key="GlassToastBackground" Color="{ThemeResource SystemColorWindowColor}" />
                     <SolidColorBrush x:Key="GlassToastBorder" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="SettingsCardBackground" Color="{ThemeResource SystemColorWindowColor}" />
+                    <SolidColorBrush x:Key="SettingsCardBorder" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="SettingsDivider" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="SettingsBadgeBackground" Color="{ThemeResource SystemColorWindowColor}" />
+                    <SolidColorBrush x:Key="SettingsBadgeForeground" Color="{ThemeResource SystemColorWindowTextColor}" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
 

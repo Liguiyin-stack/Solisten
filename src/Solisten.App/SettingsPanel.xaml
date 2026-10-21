@@ -4,79 +4,123 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
+    <!--
+        设置薄片：分区标题 + 圆角卡片，卡片里一行一项（左边标题和一句说明，右边控件）。
+        多选一的设置统一用右侧下拉框，避免单选按钮在窄面板里换行。
+    -->
     <UserControl.Resources>
         <Style x:Key="SectionHeader" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontSize" Value="13" />
             <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="Margin" Value="0,18,0,6" />
+            <Setter Property="Opacity" Value="0.85" />
+            <Setter Property="Margin" Value="4,26,0,8" />
         </Style>
-        <!-- 单选项在一行内排开（默认 120 的最小宽度会让三个选项折成两列，顺序看起来是乱的） -->
-        <Style TargetType="RadioButton" BasedOn="{StaticResource DefaultRadioButtonStyle}">
-            <Setter Property="MinWidth" Value="88" />
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="{ThemeResource SettingsCardBackground}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource SettingsCardBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="10" />
+        </Style>
+        <Style x:Key="Divider" TargetType="Border">
+            <Setter Property="Height" Value="1" />
+            <Setter Property="Background" Value="{ThemeResource SettingsDivider}" />
+        </Style>
+        <Style x:Key="RowTitle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style x:Key="RowDescription" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Opacity" Value="0.65" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,2,0,0" />
         </Style>
         <Style x:Key="Hint" TargetType="TextBlock">
             <Setter Property="FontSize" Value="12" />
-            <Setter Property="Opacity" Value="0.72" />
+            <Setter Property="Opacity" Value="0.6" />
             <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style x:Key="RowChoice" TargetType="ComboBox" BasedOn="{StaticResource DefaultComboBoxStyle}">
+            <Setter Property="MinWidth" Value="128" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="IconButton" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="8" />
+            <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
     </UserControl.Resources>
 
-    <!-- 右侧的柔光玻璃薄片：贴住窗口右侧和底部，只有左上角是圆角；玻璃本身由聆听空间在后面绘制 -->
-    <Grid x:Name="Sheet" CornerRadius="22,0,0,0" Padding="0,20,0,16">
+    <!-- 右侧的柔光玻璃卡片：和窗口右侧、底部留出间隙，四角圆角；玻璃本身由聆听空间在后面绘制 -->
+    <Grid x:Name="Sheet" CornerRadius="22" Padding="0,20,0,14">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
-        <Border Grid.RowSpan="2" Height="1" VerticalAlignment="Top" Margin="22,-20,0,0" Background="{StaticResource GlassTopEdgeBrush}" IsHitTestVisible="False" />
-        <Border Grid.RowSpan="2" Width="1" HorizontalAlignment="Left" Margin="0,2,0,-16" Background="{StaticResource GlassSideEdgeBrush}" IsHitTestVisible="False" />
-        <Grid Padding="24,0,12,8">
-            <TextBlock Text="设置" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" />
-            <Button x:Name="CloseButton" HorizontalAlignment="Right" Background="Transparent" BorderThickness="0" Padding="8" Click="OnCloseClick"
+        <Border Grid.RowSpan="2" Height="1" VerticalAlignment="Top" Margin="22,-20,22,0" Background="{StaticResource GlassEdgeBrush}" IsHitTestVisible="False" />
+        <Border Grid.RowSpan="2" Width="1" HorizontalAlignment="Left" Margin="0,2,0,8" Background="{StaticResource GlassSideEdgeBrush}" IsHitTestVisible="False" />
+        <Grid Padding="28,0,16,4">
+            <TextBlock Text="设置" FontSize="24" FontWeight="SemiBold" VerticalAlignment="Center" />
+            <Button x:Name="CloseButton" HorizontalAlignment="Right" Style="{StaticResource IconButton}" Click="OnCloseClick"
                     ToolTipService.ToolTip="关闭 (Esc)" AutomationProperties.Name="关闭设置">
                 <FontIcon Glyph="&#xE711;" FontSize="12" />
             </Button>
         </Grid>
 
         <ScrollViewer x:Name="Scroller" Grid.Row="1" Padding="24,0,24,0" VerticalScrollBarVisibility="Auto">
-            <StackPanel Padding="0,0,0,8">
+            <StackPanel Padding="0,0,0,28">
 
-                <!-- 曲库文件夹 -->
-                <TextBlock Text="曲库文件夹" Style="{StaticResource SectionHeader}" Margin="0,4,0,6" />
-                <ItemsControl x:Name="RootList">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Grid Margin="0,0,0,6" ColumnSpacing="4">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding Path}" FontSize="13" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding Path}" />
-                                    <TextBlock Text="{Binding Status}" FontSize="12" Opacity="0.72" />
-                                </StackPanel>
-                                <Button Grid.Column="1" Tag="{Binding Id}" Click="OnRescanRootClick" Padding="8" Background="Transparent" BorderThickness="0"
-                                        ToolTipService.ToolTip="重新扫描" AutomationProperties.Name="重新扫描">
-                                    <FontIcon Glyph="&#xE72C;" FontSize="14" />
-                                </Button>
-                                <Button Grid.Column="2" Tag="{Binding Id}" Click="OnRemoveRootClick" Padding="8" Background="Transparent" BorderThickness="0"
-                                        ToolTipService.ToolTip="从曲库移除" AutomationProperties.Name="从曲库移除">
-                                    <FontIcon Glyph="&#xE74D;" FontSize="14" />
-                                </Button>
-                            </Grid>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <TextBlock x:Name="NoRoots" Text="还没有曲库文件夹。" Style="{StaticResource Hint}" Visibility="Collapsed" />
-                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
-                    <Button Content="添加文件夹" Click="OnAddRootClick" />
-                    <Button x:Name="RescanAllButton" Content="全部重新扫描" Click="OnRescanAllClick" />
-                </StackPanel>
-                <TextBlock x:Name="ScanStatus" Style="{StaticResource Hint}" Margin="0,6,0,0" />
-
-                <!-- 未导入的文件 -->
-                <TextBlock x:Name="UnsupportedSummary" Style="{StaticResource Hint}" Margin="0,10,0,0" />
-                <Expander x:Name="UnsupportedExpander" Header="未导入的文件" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,6,0,0" Visibility="Collapsed">
+                <!-- ───────── 曲库 ───────── -->
+                <TextBlock Text="曲库" Style="{StaticResource SectionHeader}" Margin="4,12,0,8" />
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <ItemsControl x:Name="RootList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Padding="16,12,8,12" ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <FontIcon Glyph="&#xE8B7;" FontSize="18" Opacity="0.75" VerticalAlignment="Center" />
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Path}" FontSize="14" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding Path}" />
+                                            <TextBlock Text="{Binding Status}" FontSize="12" Opacity="0.65" Margin="0,2,0,0" />
+                                        </StackPanel>
+                                        <Button Grid.Column="2" Tag="{Binding Id}" Click="OnRescanRootClick" Style="{StaticResource IconButton}"
+                                                ToolTipService.ToolTip="重新扫描" AutomationProperties.Name="重新扫描">
+                                            <FontIcon Glyph="&#xE72C;" FontSize="14" />
+                                        </Button>
+                                        <Button Grid.Column="3" Tag="{Binding Id}" Click="OnRemoveRootClick" Style="{StaticResource IconButton}"
+                                                ToolTipService.ToolTip="从曲库移除" AutomationProperties.Name="从曲库移除">
+                                            <FontIcon Glyph="&#xE74D;" FontSize="14" />
+                                        </Button>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock x:Name="NoRoots" Text="还没有曲库文件夹。添加一个包含音乐文件的文件夹开始使用。" Style="{StaticResource Hint}"
+                                   Margin="16,14" Visibility="Collapsed" />
+                        <Border Style="{StaticResource Divider}" />
+                        <Grid Padding="16,12" ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock x:Name="ScanStatus" Style="{StaticResource Hint}" />
+                                <TextBlock x:Name="UnsupportedSummary" Style="{StaticResource Hint}" />
+                            </StackPanel>
+                            <Button x:Name="RescanAllButton" Grid.Column="1" Content="全部重新扫描" Click="OnRescanAllClick" />
+                            <Button Grid.Column="2" Content="添加文件夹" Click="OnAddRootClick" Style="{StaticResource AccentButtonStyle}" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+                <Expander x:Name="UnsupportedExpander" Header="未导入的文件" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,8,0,0" Visibility="Collapsed">
                     <ListView x:Name="UnsupportedList" MaxHeight="220" SelectionMode="None" IsItemClickEnabled="False">
                         <ListView.ItemTemplate>
                             <DataTemplate>
@@ -86,47 +130,254 @@
                     </ListView>
                 </Expander>
 
-                <!-- 播放 -->
-                <TextBlock Text="播放到上下文末尾时" Style="{StaticResource SectionHeader}" />
-                <RadioButtons x:Name="EndBehaviorChoice" SelectionChanged="OnEndBehaviorChanged">
-                    <x:String>停止</x:String>
-                    <x:String>继续下一个分组</x:String>
-                </RadioButtons>
+                <!-- ───────── 播放 ───────── -->
+                <TextBlock Text="播放" Style="{StaticResource SectionHeader}" />
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <Grid Padding="16,12" ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="播放到末尾时" Style="{StaticResource RowTitle}" />
+                                <TextBlock Text="播完一个专辑、文件夹或歌单之后" Style="{StaticResource RowDescription}" />
+                            </StackPanel>
+                            <ComboBox x:Name="EndBehaviorChoice" Grid.Column="1" Style="{StaticResource RowChoice}" SelectionChanged="OnEndBehaviorChanged"
+                                      AutomationProperties.Name="播放到末尾时">
+                                <x:String>停止</x:String>
+                                <x:String>继续下一组</x:String>
+                            </ComboBox>
+                        </Grid>
+                        <Border Style="{StaticResource Divider}" />
+                        <StackPanel Padding="16,12" Spacing="8">
+                            <StackPanel>
+                                <TextBlock Text="输出设备" Style="{StaticResource RowTitle}" />
+                                <TextBlock x:Name="DeviceHint" Text="共享模式，跨采样率也能无缝衔接" Style="{StaticResource RowDescription}" />
+                            </StackPanel>
+                            <ComboBox x:Name="DeviceChoice" HorizontalAlignment="Stretch" SelectionChanged="OnDeviceChanged" AutomationProperties.Name="输出设备" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
 
-                <!-- 输出 -->
-                <TextBlock Text="输出设备" Style="{StaticResource SectionHeader}" />
-                <ComboBox x:Name="DeviceChoice" HorizontalAlignment="Stretch" SelectionChanged="OnDeviceChanged" />
-                <TextBlock x:Name="DeviceHint" Text="共享模式：所有曲目统一转换为设备的混音格式，跨采样率也能无缝播放。" Style="{StaticResource Hint}" Margin="0,6,0,0" />
-
-                <!-- 画布 -->
+                <!-- ───────── 聆听空间 ───────── -->
                 <TextBlock Text="聆听空间" Style="{StaticResource SectionHeader}" />
-                <RadioButtons x:Name="SpaceChoice" SelectionChanged="OnSpaceChanged" MaxColumns="3">
-                    <x:String>安静</x:String>
-                    <x:String>标准</x:String>
-                    <x:String>沉浸</x:String>
-                </RadioButtons>
-                <TextBlock Text="安静：封面呼吸很轻、粒子很少，适合长时间使用。标准：低频有明显起伏，重音有短暂扩散。沉浸：变形和景深更强、粒子更多，适合全屏欣赏。按 I 可以随时切换。"
-                           Style="{StaticResource Hint}" Margin="0,4,0,0" />
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <Grid Padding="16,12" ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="空间模式" Style="{StaticResource RowTitle}" />
+                                <TextBlock Text="安静适合长时间聆听，沉浸适合全屏欣赏。按 I 随时切换" Style="{StaticResource RowDescription}" />
+                            </StackPanel>
+                            <ComboBox x:Name="SpaceChoice" Grid.Column="1" Style="{StaticResource RowChoice}" SelectionChanged="OnSpaceChanged"
+                                      AutomationProperties.Name="空间模式">
+                                <x:String>安静</x:String>
+                                <x:String>标准</x:String>
+                                <x:String>沉浸</x:String>
+                            </ComboBox>
+                        </Grid>
+                        <Border Style="{StaticResource Divider}" />
+                        <Grid Padding="16,12" ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="减少动态效果" Style="{StaticResource RowTitle}" />
+                                <TextBlock Text="封面保持静止，不显示扩散和粒子" Style="{StaticResource RowDescription}" />
+                            </StackPanel>
+                            <ComboBox x:Name="MotionChoice" Grid.Column="1" Style="{StaticResource RowChoice}" SelectionChanged="OnMotionChanged"
+                                      AutomationProperties.Name="减少动态效果">
+                                <x:String>跟随系统</x:String>
+                                <x:String>开</x:String>
+                                <x:String>关</x:String>
+                            </ComboBox>
+                        </Grid>
+                    </StackPanel>
+                </Border>
 
-                <TextBlock Text="减少动态效果" Style="{StaticResource SectionHeader}" />
-                <RadioButtons x:Name="MotionChoice" SelectionChanged="OnMotionChanged" MaxColumns="3">
-                    <x:String>跟随系统</x:String>
-                    <x:String>开</x:String>
-                    <x:String>关</x:String>
-                </RadioButtons>
+                <!-- ───────── 网易云音乐：可选，默认未连接；未登录时不产生任何网络请求 ───────── -->
+                <TextBlock Text="网易云音乐" Style="{StaticResource SectionHeader}" />
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <!-- 账号 -->
+                        <Grid Padding="16,14" ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid Width="40" Height="40">
+                                <Ellipse Fill="#FFE5363D" />
+                                <TextBlock x:Name="NetEaseAvatarText" Text="云" Foreground="White" FontSize="16" FontWeight="SemiBold"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Grid>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock x:Name="NetEaseAccount" Text="网易云音乐" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                <TextBlock x:Name="NetEaseSubtitle" Text="未登录" Style="{StaticResource RowDescription}" />
+                            </StackPanel>
+                            <Border x:Name="NetEaseBadge" Grid.Column="2" CornerRadius="10" Padding="10,3" VerticalAlignment="Center"
+                                    Background="{ThemeResource SettingsBadgeBackground}" Visibility="Collapsed">
+                                <TextBlock x:Name="NetEaseState" Text="已连接" FontSize="12" Foreground="{ThemeResource SettingsBadgeForeground}" />
+                            </Border>
+                        </Grid>
+                        <Border Style="{StaticResource Divider}" />
 
-                <!-- 关于 -->
-                <TextBlock Text="关于" Style="{StaticResource SectionHeader}" />
-                <TextBlock x:Name="AboutVersion" FontSize="13" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
-                <TextBlock Text="Solisten 只读取你选择的本地文件：不联网、不上传音频、不改写音频文件。标签、备注和标记只保存在 Solisten 自己的数据库中。"
-                           Style="{StaticResource Hint}" Margin="0,6,0,0" />
-                <TextBlock x:Name="AboutData" Style="{StaticResource Hint}" Margin="0,6,0,0" IsTextSelectionEnabled="True" />
-                <TextBlock Style="{StaticResource Hint}" Margin="0,10,0,0"
-                           Text="开源组件：FFmpeg（LGPL 2.1 或更高版本，以动态链接方式使用）、TagLib#（LGPL 2.1）、Win2D（MIT）、Windows App SDK（MIT）、CommunityToolkit.Mvvm（MIT）、Microsoft.Data.Sqlite / SQLite（MIT / 公有领域）、Dapper（Apache 2.0）、NAudio（MIT）、pinyin-data（MIT）。" />
-                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
-                    <Button Content="查看许可证" Click="OnLicensesClick" />
-                    <Button Content="打开数据文件夹" Click="OnDataFolderClick" />
+                        <TextBlock x:Name="NetEaseUnavailable" Style="{StaticResource Hint}" Margin="16,12" Visibility="Collapsed"
+                                   Text="暂不可用：网易云音乐集成已关闭。" />
+
+                        <!-- 未登录 -->
+                        <StackPanel x:Name="NetEaseSignedOut" Padding="16,12,16,14" Spacing="10" Visibility="Collapsed">
+                            <TextBlock Style="{StaticResource RowDescription}" Margin="0"
+                                       Text="登录后同步你的歌单：本地有文件的歌用本地文件播放，其余在线播放（按你的账号权限）。" />
+                            <CheckBox x:Name="NetEaseConsent" Click="OnNetEaseConsentClick">
+                                <TextBlock Text="我了解这是非官方集成，接口可能随时失效" TextWrapping="Wrap" FontSize="13" />
+                            </CheckBox>
+                            <Button x:Name="NetEaseLoginButton" Click="OnNetEaseLoginClick" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Left">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon Glyph="&#xED14;" FontSize="14" />
+                                    <TextBlock Text="扫码登录" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+
+                        <!-- 已登录 -->
+                        <StackPanel x:Name="NetEaseSignedIn" Visibility="Collapsed">
+                            <Grid Padding="16,12" ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Name="NetEaseStatus" Style="{StaticResource Hint}" VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite" />
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                    <Button x:Name="NetEaseCancelButton" Content="取消" Click="OnNetEaseCancelClick" Visibility="Collapsed" />
+                                    <Button x:Name="NetEaseSyncButton" Click="OnNetEaseSyncClick" Style="{StaticResource AccentButtonStyle}">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <FontIcon Glyph="&#xE895;" FontSize="14" />
+                                            <TextBlock Text="立即同步" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </Grid>
+                            <Border Style="{StaticResource Divider}" />
+                            <Grid Padding="16,12" ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="在线播放音质" Style="{StaticResource RowTitle}" />
+                                    <TextBlock Text="按账号权限提供，没有权限时只能试听" Style="{StaticResource RowDescription}" />
+                                </StackPanel>
+                                <ComboBox x:Name="NetEaseQualityChoice" Grid.Column="1" Style="{StaticResource RowChoice}" SelectionChanged="OnNetEaseQualityChanged"
+                                          AutomationProperties.Name="在线播放音质">
+                                    <x:String>标准</x:String>
+                                    <x:String>较高</x:String>
+                                    <x:String>极高</x:String>
+                                    <x:String>无损</x:String>
+                                </ComboBox>
+                            </Grid>
+                            <Border Style="{StaticResource Divider}" />
+                            <Grid Padding="16,12" ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="退出登录" Style="{StaticResource RowTitle}" />
+                                    <TextBlock Text="删除本机保存的登录信息，可选择保留已同步的歌单" Style="{StaticResource RowDescription}" />
+                                </StackPanel>
+                                <Button x:Name="NetEaseLogoutButton" Grid.Column="1" Content="退出" Click="OnNetEaseLogoutClick" VerticalAlignment="Center" />
+                            </Grid>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- 歌单 -->
+                <StackPanel x:Name="NetEasePlaylists" Visibility="Collapsed">
+                    <Grid Margin="4,18,4,8">
+                        <TextBlock Text="歌单" FontSize="13" FontWeight="SemiBold" Opacity="0.85" />
+                        <TextBlock Text="勾选的收藏歌单会一起同步" Style="{StaticResource Hint}" HorizontalAlignment="Right" />
+                    </Grid>
+                    <Border Style="{StaticResource Card}" Padding="0,4">
+                        <ItemsControl x:Name="NetEasePlaylistList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Padding="12,6,8,6" ColumnSpacing="4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <CheckBox IsChecked="{Binding Selected}" IsEnabled="{Binding CanToggle}" Tag="{Binding Id}" Click="OnNetEasePlaylistClick"
+                                                  MinWidth="0" Width="32" VerticalAlignment="Center" ToolTipService.ToolTip="{Binding SyncTip}"
+                                                  AutomationProperties.Name="{Binding SyncName}" />
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Name}" FontSize="14" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding Name}" />
+                                            <TextBlock Text="{Binding Detail}" FontSize="12" Opacity="0.65" Margin="0,1,0,0" />
+                                        </StackPanel>
+                                        <Button Grid.Column="2" Tag="{Binding Id}" IsEnabled="{Binding CanBrowse}" Click="OnNetEaseBrowseClick" Style="{StaticResource IconButton}"
+                                                ToolTipService.ToolTip="在导航层浏览" AutomationProperties.Name="{Binding BrowseName}">
+                                            <FontIcon Glyph="&#xE768;" FontSize="14" />
+                                        </Button>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Border>
+                    <TextBlock Style="{StaticResource Hint}" Margin="4,8,4,0"
+                               Text="也可以在主界面导航层的目录里选择「网易云歌单」浏览和播放。" />
                 </StackPanel>
+
+                <TextBlock Style="{StaticResource Hint}" Margin="4,12,4,0"
+                           Text="Solisten 不保存在线音频，不上传本地音乐或曲库信息；登录信息只保存在本机的 Windows 凭据管理器中。" />
+
+                <!-- ───────── 关于 ───────── -->
+                <TextBlock Text="关于" Style="{StaticResource SectionHeader}" />
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <Grid Padding="16,12" ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock x:Name="AboutVersion" Style="{StaticResource RowTitle}" IsTextSelectionEnabled="True" />
+                                <TextBlock x:Name="AboutData" Style="{StaticResource RowDescription}" IsTextSelectionEnabled="True" />
+                            </StackPanel>
+                            <Button Grid.Column="1" Content="打开数据文件夹" Click="OnDataFolderClick" VerticalAlignment="Center" />
+                        </Grid>
+                        <Border Style="{StaticResource Divider}" />
+                        <Grid Padding="16,12" ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="隐私" Style="{StaticResource RowTitle}" />
+                                <TextBlock Style="{StaticResource RowDescription}"
+                                           Text="只读取你选择的本地文件，从不改写音频。标签、备注和标记只保存在 Solisten 自己的数据库中。" />
+                            </StackPanel>
+                        </Grid>
+                        <Border Style="{StaticResource Divider}" />
+                        <Grid Padding="16,12" ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="开源组件" Style="{StaticResource RowTitle}" />
+                                <TextBlock Style="{StaticResource RowDescription}"
+                                           Text="FFmpeg（LGPL 2.1+，动态链接）、TagLib#（LGPL 2.1）、Win2D、Windows App SDK、CommunityToolkit.Mvvm、Microsoft.Data.Sqlite、SQLite、Dapper、NAudio、pinyin-data、QRCoder" />
+                            </StackPanel>
+                            <Button Grid.Column="1" Content="查看许可证" Click="OnLicensesClick" VerticalAlignment="Center" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
             </StackPanel>
         </ScrollViewer>
     </Grid>

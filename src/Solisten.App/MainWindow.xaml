@@ -85,8 +85,31 @@
                            Foreground="{StaticResource InkSoftBrush}" TextAlignment="Center" TextTrimming="CharacterEllipsis" />
             </StackPanel>
 
-            <!-- 舞台：动态封面在这里（空元素，只用来告诉空间封面的位置和大小） -->
-            <Border x:Name="Stage" Grid.Row="2" Background="Transparent" IsHitTestVisible="False" />
+            <!--
+                舞台区：没有歌词时只有舞台（封面居中）；有歌词时左边是舞台和歌名，右边是整屏歌词。
+                舞台是空元素，只用来告诉空间封面的位置和大小，封面会平滑地移动过去。
+            -->
+            <Grid x:Name="StageArea" Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition x:Name="StageColumn" Width="*" />
+                    <ColumnDefinition x:Name="LyricsColumn" Width="0" />
+                </Grid.ColumnDefinitions>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Border x:Name="Stage" Background="Transparent" IsHitTestVisible="False" />
+                    <StackPanel x:Name="LyricsIdentity" Grid.Row="1" HorizontalAlignment="Center" Margin="32,0,32,12" MaxWidth="600" Visibility="Collapsed"
+                                Tapped="OnIdentityTapped">
+                        <TextBlock Text="{x:Bind ViewModel.Title, Mode=OneWay}" FontFamily="{StaticResource CanvasFont}" FontSize="30" FontWeight="SemiBold"
+                                   Foreground="{StaticResource InkBrush}" TextAlignment="Center" TextTrimming="CharacterEllipsis" MaxLines="2" TextWrapping="WrapWholeWords" />
+                        <TextBlock Text="{x:Bind ViewModel.Subtitle, Mode=OneWay}" FontSize="16" Margin="0,4,0,0"
+                                   Foreground="{StaticResource InkSoftBrush}" TextAlignment="Center" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                </Grid>
+                <local:LyricsView x:Name="LyricsPanel" Grid.Column="1" Margin="0,8,72,48" Visibility="Collapsed" />
+            </Grid>
 
             <!-- 极简播放进度：3px 细线，悬停变粗，点击或拖动跳转 -->
             <progress:ProgressLine x:Name="Progress" Grid.Row="3" Height="56" />
@@ -123,6 +146,11 @@
                               Foreground="{StaticResource InkBrush}" CornerRadius="20" Padding="10" IsTabStop="False" ToolTipService.ToolTip="单曲循环 (R)">
                     <FontIcon Glyph="&#xE8ED;" FontSize="16" />
                 </ToggleButton>
+                <ToggleButton x:Name="LyricsButton" Click="OnLyricsClick" Background="Transparent" BorderThickness="0"
+                              Foreground="{StaticResource InkBrush}" CornerRadius="20" Padding="10" IsTabStop="False"
+                              ToolTipService.ToolTip="显示歌词 (L)" AutomationProperties.Name="显示歌词">
+                    <FontIcon Glyph="&#xE7F0;" FontSize="16" />
+                </ToggleButton>
                 <FontIcon x:Name="VolumeIcon" Glyph="&#xE767;" FontSize="16" Foreground="{StaticResource InkBrush}" Margin="8,0,4,0" VerticalAlignment="Center" />
                 <Slider x:Name="VolumeSlider" Width="110" Minimum="0" Maximum="1" StepFrequency="0.01" VerticalAlignment="Center"
                         ValueChanged="OnVolumeChanged" IsTabStop="False" IsThumbToolTipEnabled="False" />
@@ -158,6 +186,7 @@
                         <ComboBoxItem Content="文件夹" Tag="Folder" />
                         <ComboBoxItem Content="专辑" Tag="Album" />
                         <ComboBoxItem Content="聆听记录" Tag="Listening" />
+                        <ComboBoxItem x:Name="PlaylistsItem" Content="网易云歌单" Tag="Playlists" />
                     </ComboBox>
                     <TextBlock Text="Enter 播放 · Esc 返回 · . 回到正在播放" VerticalAlignment="Center" FontSize="12" Margin="12,0,0,0" Foreground="{StaticResource InkSoftBrush}" />
                 </StackPanel>
@@ -232,7 +261,7 @@
 
         <!-- ───────── 设置：附着在右侧的薄片 ───────── -->
         <local:SettingsPanel x:Name="SettingsSheet" Visibility="Collapsed" HorizontalAlignment="Right" VerticalAlignment="Stretch"
-                             Width="420" Margin="0,40,0,0" />
+                             Width="460" Margin="0,40,12,12" />
 
         <!-- 轻提示 -->
         <Border x:Name="Toast" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,150" Padding="18,9" CornerRadius="18"

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>$(WindowsTfm)</TargetFramework>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <RootNamespace>Solisten.Integrations.NetEase</RootNamespace>
+  </PropertyGroup>
+  <!-- 可选集成模块：Core 与播放引擎都不引用这里。只有用户登录后才会产生网络请求。 -->
+  <ItemGroup>
+    <ProjectReference Include="..\Solisten.Core\Solisten.Core.csproj" />
+    <ProjectReference Include="..\Solisten.Library\Solisten.Library.csproj" />
+    <PackageReference Include="QRCoder" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Solisten.Integrations.NetEase.Tests" />
+  </ItemGroup>
+</Project>

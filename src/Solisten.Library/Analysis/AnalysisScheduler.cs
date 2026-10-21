@@ -158,6 +158,55 @@ public sealed class AnalysisScheduler : IDisposable
         _db.SaveAnalysis(track.Id, WaveformData.CurrentVersion, SoundFeatures.CurrentVersion, palette);
     }
 
+    // ───────────────────────── 在线曲目 ─────────────────────────
+    // 在线曲目没有本地文件、不在数据库中：音频特征由播放时的边播边分析（LiveFeatureRecorder）记录，
+    // 封面主色从缓存的封面图片提取。只保存分析结果，不保存音频。
+
+    /// <summary>封面主色：已经提取过时直接读取，否则从封面图片提取并保存。封面缺失或损坏时返回 null。</summary>
+    public Palette? EnsureStreamPalette(TrackId id, string? coverPath)
+    {
+        if (LoadStreamPalette(_paths, id) is { } existing) return existing;
+        if (coverPath is null || !File.Exists(coverPath)) return null;
+        try
+        {
+            var rgba = ImageTools.DecodeRgbaAsync(File.ReadAllBytes(coverPath), PaletteExtractor.SampleSize).GetAwaiter().GetResult();
+            var palette = PaletteExtractor.Extract(rgba);
+            var dto = new StreamPaletteDto(palette.Base.ToHex(), palette.Accent.ToHex(), palette.Dim.ToHex(), palette.TextOnBase.ToHex(),
+                [.. palette.Swatches.ToList().Select(c => c.ToHex())]);
+            AtomicFile.Write(StreamPalettePath(_paths, id), s => System.Text.Json.JsonSerializer.Serialize(s, dto));
+            return palette;
+        }
+        catch (Exception e) when (e is ArgumentException or System.Runtime.InteropServices.COMException or IOException)
+        {
+            return null; // 封面图片损坏：使用中性色场
+        }
+    }
+
+    /// <summary>保存边播边分析得到的完整音频特征（与离线分析结果等价）。</summary>
+    public void SaveStreamFeatures(TrackId id, SoundFeatures features) => AtomicFile.Write(_paths.Features(id), features.Write);
+
+    public static bool HasStreamFeatures(AppPaths paths, TrackId id) => File.Exists(paths.Features(id));
+
+    private static string StreamPalettePath(AppPaths paths, TrackId id) => Path.ChangeExtension(paths.Features(id), ".palette.json");
+
+    public static Palette? LoadStreamPalette(AppPaths paths, TrackId id)
+    {
+        var path = StreamPalettePath(paths, id);
+        if (!File.Exists(path)) return null;
+        try
+        {
+            if (System.Text.Json.JsonSerializer.Deserialize<StreamPaletteDto>(File.ReadAllText(path)) is not { } d) return null;
+            return new Palette(Rgb.FromHex(d.Base), Rgb.FromHex(d.Accent), Rgb.FromHex(d.Dim), Rgb.FromHex(d.TextOnBase),
+                d.Swatches is { Length: > 0 } sw ? SwatchSet.Of([.. sw.Select(Rgb.FromHex)]) : default);
+        }
+        catch (Exception e) when (e is IOException or System.Text.Json.JsonException or FormatException)
+        {
+            return null;
+        }
+    }
+
+    private sealed record StreamPaletteDto(string Base, string Accent, string Dim, string TextOnBase, string[]? Swatches);
+
     public static SoundFeatures? LoadFeatures(AppPaths paths, TrackId id)
     {
         var path = paths.Features(id);

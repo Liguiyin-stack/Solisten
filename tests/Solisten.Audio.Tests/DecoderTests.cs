@@ -126,3 +126,20 @@ public sealed class DecoderTests : IDisposable
         return null;
     }
 }
+
+/// <summary>在线音频（https 流）。设置 SOLISTEN_NETWORK_LIVE=1 时运行，需要联网。</summary>
+public class NetworkDecoderTests
+{
+    [Fact]
+    public void Https_StreamDecodesAndSeeks()
+    {
+        if (Environment.GetEnvironmentVariable("SOLISTEN_NETWORK_LIVE") != "1" || !FFmpegLoader.IsAvailable) return;
+        using var r = new FFmpegPcmReader("https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", 48000, 2);
+        Assert.True(r.Duration > TimeSpan.FromMinutes(1));
+        var buf = new float[48000 * 2];
+        Assert.True(r.Read(buf) > 0);
+        r.Seek(TimeSpan.FromSeconds(60));
+        Assert.True(r.Read(buf) > 0);
+        Assert.InRange(r.PositionFrames, 60 * 48000, 62 * 48000);
+    }
+}

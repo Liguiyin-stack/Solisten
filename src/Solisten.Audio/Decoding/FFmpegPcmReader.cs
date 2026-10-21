@@ -60,6 +60,10 @@ public sealed unsafe class FFmpegPcmReader : ISeekablePcmReader
         if (_durationTs > 0) _endFrame = (long)Math.Round(_durationTs * ffmpeg.av_q2d(_timeBase) * SampleRate);
     }
 
+    /// <summary>http / https 地址由 FFmpeg 的网络协议读取（流式，不落盘）。</summary>
+    public static bool IsNetworkSource(string path) =>
+        path.StartsWith("https://", StringComparison.OrdinalIgnoreCase) || path.StartsWith("http://", StringComparison.OrdinalIgnoreCase);
+
     public int SampleRate { get; }
     public int Channels { get; }
     public TimeSpan Duration { get; private set; }
@@ -68,8 +72,23 @@ public sealed unsafe class FFmpegPcmReader : ISeekablePcmReader
     private void Open()
     {
         AVFormatContext* fmt = null;
-        if (!File.Exists(_path)) throw new AudioDecodeException("文件不存在");
-        Check(ffmpeg.avformat_open_input(&fmt, _path, null, null), "打开文件");
+        if (IsNetworkSource(_path))
+        {
+            // 在线音频（例如网易云的播放地址）：读写超时和断线重连，避免网络抖动时解码线程无限等待。
+            AVDictionary* options = null;
+            ffmpeg.av_dict_set(&options, "rw_timeout", "15000000", 0); // 微秒
+            ffmpeg.av_dict_set(&options, "reconnect", "1", 0);
+            ffmpeg.av_dict_set(&options, "reconnect_on_network_error", "1", 0);
+            ffmpeg.av_dict_set(&options, "reconnect_delay_max", "4", 0);
+            ffmpeg.av_dict_set(&options, "user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Solisten", 0);
+            try { Check(ffmpeg.avformat_open_input(&fmt, _path, null, &options), "打开在线音频"); }
+            finally { ffmpeg.av_dict_free(&options); }
+        }
+        else
+        {
+            if (!File.Exists(_path)) throw new AudioDecodeException("文件不存在");
+            Check(ffmpeg.avformat_open_input(&fmt, _path, null, null), "打开文件");
+        }
         _fmt = fmt;
         Check(ffmpeg.avformat_find_stream_info(_fmt, null), "读取流信息");
 

@@ -164,7 +164,7 @@ public sealed partial class CanvasViewModel : ObservableObject
         var paths = _host.Paths;
         var db = _host.Library.Database;
 
-        _ = Task.Run(() =>
+        _ = Task.Run(async () =>
         {
             Palette palette = Palette.Neutral;
             string? cover = null;
@@ -174,8 +174,15 @@ public sealed partial class CanvasViewModel : ObservableObject
             {
                 var analysis = db.GetAnalysis(id);
                 if (analysis is { Palette: { } p }) palette = p;
-                if (db.GetCoverHash(id) is { } hash) cover = paths.FindCover(hash);
+                if (id.IsRemote) cover = _host.NetEase is { } netease ? await netease.Online.CoverAsync(id) : null;
+                else if (db.GetCoverHash(id) is { } hash) cover = paths.FindCover(hash);
                 if (analysis is { FeaturesVersion: SoundFeatures.CurrentVersion }) features = AnalysisScheduler.LoadFeatures(paths, id);
+                if (id.IsRemote)
+                {
+                    // 在线曲目不在数据库中：分析结果只在缓存文件里（播放后在后台生成）。
+                    if (AnalysisScheduler.LoadStreamPalette(paths, id) is { } rp) palette = rp;
+                    features = AnalysisScheduler.LoadFeatures(paths, id);
+                }
                 markers = db.GetMarkers(id).Select(m => m.Position).ToList();
             }
             catch (Exception e) { _host.Log.Write($"load visuals failed {id}: {e.Message}"); }
@@ -187,7 +194,7 @@ public sealed partial class CanvasViewModel : ObservableObject
                 _visuals = visuals;
                 Title = track.Meta.Title;
                 Subtitle = string.Join(" · ", new[] { track.Meta.Artist, track.Meta.Album }.Where(x => !string.IsNullOrWhiteSpace(x)));
-                PathHint = track.Path;
+                PathHint = track.Id.IsRemote ? "网易云音乐 · 在线播放" : track.Path;
                 VisualsChanged?.Invoke(visuals, transition);
             });
         });
@@ -214,6 +221,7 @@ public sealed partial class CanvasViewModel : ObservableObject
             _coverLibrary = s.Library;
         }
         RibbonItems.Clear();
+        _thumbCenter = -1;
         for (int i = 0; i < ctx.Count; i++)
         {
             var id = ctx.Order[i];
@@ -230,6 +238,7 @@ public sealed partial class CanvasViewModel : ObservableObject
 
     private string? ThumbFor(TrackId id)
     {
+        if (id.IsRemote) return _host.NetEase?.Online.CachedCover(id);
         if (!_coverHashes.TryGetValue(id, out var hash)) return null;
         var p = _host.Paths.Thumb(hash, 256);
         return File.Exists(p) ? p : _host.Paths.FindCover(hash);
@@ -248,10 +257,31 @@ public sealed partial class CanvasViewModel : ObservableObject
                 item.IsPlaying = item.Track == playing;
                 item.IsFocused = item.Index == focus;
             }
+            RequestRemoteThumbs(focus);
             return;
         }
         if (prevFocus >= 0 && prevFocus < RibbonItems.Count) RibbonItems[prevFocus].IsFocused = false;
         if (focus >= 0 && focus < RibbonItems.Count) RibbonItems[focus].IsFocused = true;
+        RequestRemoteThumbs(focus);
+    }
+
+    // ───────────────────────── 在线曲目缩略图 ─────────────────────────
+
+    private int _thumbCenter = -1;
+
+    /// <summary>导航焦点附近的在线曲目：后台下载小缩略图，下载好后卡片自动换上封面。移动不到 10 首不重复请求。</summary>
+    private void RequestRemoteThumbs(int focus)
+    {
+        if (_host.NetEase is not { } netease || focus < 0 || RibbonItems.Count == 0) return;
+        if (_thumbCenter >= 0 && Math.Abs(focus - _thumbCenter) < 10) return;
+        _thumbCenter = focus;
+        foreach (var item in RibbonItems.Skip(Math.Max(0, focus - 20)).Take(41).Where(i => i.Track.IsRemote && i.ThumbPath is null).ToList())
+        {
+            _ = Task.Run(async () =>
+            {
+                if (await netease.Online.ThumbAsync(item.Track) is { } path) _ui.Run(() => item.ThumbPath ??= path);
+            });
+        }
     }
 }
 

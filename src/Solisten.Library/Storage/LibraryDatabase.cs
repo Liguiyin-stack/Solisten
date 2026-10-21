@@ -20,7 +20,7 @@ public sealed record Marker(long Id, TrackId Track, TimeSpan Position, string? L
 /// <summary>§6.4 SQLite 存储（WAL、FTS5）。单连接 + 锁，读写都很短，避免多连接的忙等。</summary>
 public sealed class LibraryDatabase : IDisposable
 {
-    private const int SchemaVersion = 2;
+    internal const int SchemaVersion = 3;
     private readonly SqliteConnection _db;
     private readonly Lock _gate = new();
 
@@ -56,14 +56,21 @@ public sealed class LibraryDatabase : IDisposable
         var version = _db.ExecuteScalar<long>("PRAGMA user_version");
         if (version >= SchemaVersion) return;
         using var tx = _db.BeginTransaction();
-        if (version >= 1)
+        if (version == 0) CreateBaseSchema(tx);
+        if (version == 1)
         {
             // 1 → 2：音频特征（聆听空间）。已有曲目的 features_ver 为 0，会在后台补算。
             _db.Execute("ALTER TABLE analysis ADD COLUMN features_ver INTEGER NOT NULL DEFAULT 0", transaction: tx);
-            _db.Execute($"PRAGMA user_version={SchemaVersion}", transaction: tx);
-            tx.Commit();
-            return;
         }
+        // 2 → 3：远程歌单索引与本地匹配（网易云同步）。会话凭据从不进入数据库。
+        CreateRemoteSchema(tx);
+        _db.Execute($"PRAGMA user_version={SchemaVersion}", transaction: tx);
+        tx.Commit();
+    }
+
+    /// <summary>schema 2 的全部表（新数据库从这里开始，再逐级升级）。</summary>
+    private void CreateBaseSchema(SqliteTransaction tx)
+    {
         _db.Execute("""
             CREATE TABLE roots(id INTEGER PRIMARY KEY, path TEXT NOT NULL UNIQUE COLLATE NOCASE, added_at TEXT NOT NULL, available INTEGER NOT NULL DEFAULT 1);
             CREATE TABLE tracks(
@@ -85,8 +92,59 @@ public sealed class LibraryDatabase : IDisposable
             CREATE VIRTUAL TABLE tracks_fts USING fts5(title, artist, album, rel_path, pinyin, tokenize='unicode61 remove_diacritics 2');
             CREATE INDEX ix_markers_track ON markers(track_id);
             """, transaction: tx);
-        _db.Execute($"PRAGMA user_version={SchemaVersion}", transaction: tx);
-        tx.Commit();
+    }
+
+    /// <summary>
+    /// schema 3：远程账号、歌单、曲目、歌单条目、匹配结果和同步记录。
+    /// 远程歌单被删除时只标记 remote_deleted；本地曲目被删除时映射的 local_track_id 置空（显示为本地文件缺失）。
+    /// </summary>
+    private void CreateRemoteSchema(SqliteTransaction tx)
+    {
+        _db.Execute("""
+            CREATE TABLE IF NOT EXISTS remote_accounts(
+                id INTEGER PRIMARY KEY, provider TEXT NOT NULL, remote_user_id TEXT NOT NULL, nickname TEXT, avatar_url TEXT,
+                last_sync_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                UNIQUE(provider, remote_user_id));
+            CREATE TABLE IF NOT EXISTS remote_playlists(
+                provider TEXT NOT NULL, playlist_id TEXT NOT NULL,
+                account_id INTEGER NOT NULL REFERENCES remote_accounts(id) ON DELETE CASCADE,
+                name TEXT NOT NULL, description TEXT, cover_url TEXT, is_owned INTEGER NOT NULL, track_count INTEGER NOT NULL,
+                remote_updated_at TEXT, synced_at TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0, remote_deleted INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY(provider, playlist_id));
+            CREATE TABLE IF NOT EXISTS remote_tracks(
+                provider TEXT NOT NULL, track_id TEXT NOT NULL, title TEXT NOT NULL, artist TEXT NOT NULL, album TEXT NOT NULL,
+                duration_ms INTEGER NOT NULL, isrc TEXT, cover_url TEXT, playable_online INTEGER NOT NULL DEFAULT 0,
+                remote_updated_at TEXT, raw_hash TEXT NOT NULL, synced_at TEXT NOT NULL,
+                PRIMARY KEY(provider, track_id));
+            CREATE TABLE IF NOT EXISTS remote_playlist_items(
+                provider TEXT NOT NULL, playlist_id TEXT NOT NULL, track_id TEXT NOT NULL, position INTEGER NOT NULL, added_at TEXT,
+                PRIMARY KEY(provider, playlist_id, track_id),
+                FOREIGN KEY(provider, playlist_id) REFERENCES remote_playlists(provider, playlist_id) ON DELETE CASCADE,
+                FOREIGN KEY(provider, track_id) REFERENCES remote_tracks(provider, track_id) ON DELETE CASCADE);
+            CREATE TABLE IF NOT EXISTS remote_track_mappings(
+                provider TEXT NOT NULL, track_id TEXT NOT NULL, local_track_id INTEGER, status TEXT NOT NULL,
+                confidence REAL NOT NULL, reason TEXT, is_manual INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL,
+                PRIMARY KEY(provider, track_id),
+                FOREIGN KEY(provider, track_id) REFERENCES remote_tracks(provider, track_id) ON DELETE CASCADE,
+                FOREIGN KEY(local_track_id) REFERENCES tracks(id) ON DELETE SET NULL);
+            CREATE TABLE IF NOT EXISTS sync_runs(
+                id INTEGER PRIMARY KEY, provider TEXT NOT NULL, account_id INTEGER, started_at TEXT NOT NULL, finished_at TEXT,
+                status TEXT NOT NULL, playlists_seen INTEGER NOT NULL DEFAULT 0, tracks_seen INTEGER NOT NULL DEFAULT 0,
+                matched INTEGER NOT NULL DEFAULT 0, errors INTEGER NOT NULL DEFAULT 0, error_message TEXT);
+            CREATE INDEX IF NOT EXISTS ix_remote_items_playlist ON remote_playlist_items(provider, playlist_id, position);
+            CREATE INDEX IF NOT EXISTS ix_remote_mappings_local ON remote_track_mappings(local_track_id);
+            """, transaction: tx);
+    }
+
+    /// <summary>同一程序集内的其他存储（远程歌单索引）共享这条连接和这把锁。</summary>
+    internal T Locked<T>(Func<SqliteConnection, T> work)
+    {
+        lock (_gate) return work(_db);
+    }
+
+    internal void Locked(Action<SqliteConnection> work)
+    {
+        lock (_gate) work(_db);
     }
 
     // ───────────────────────── roots ─────────────────────────

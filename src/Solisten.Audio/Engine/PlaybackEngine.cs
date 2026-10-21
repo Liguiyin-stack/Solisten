@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using Solisten.Audio.Decoding;
+using Solisten.Core.Audio;
 using Solisten.Core.Model;
 
 namespace Solisten.Audio.Engine;
@@ -64,13 +65,16 @@ public sealed class PlaybackEngine : IRenderSource, IDisposable
     private float _fade;
     private bool _postFlushFade;
     private bool _ended = true;
-    private long _segTrack = -1;
+    /// <summary>"没有曲目"。不能用 −1：在线曲目的编号是负数。</summary>
+    private const long NoTrack = long.MinValue;
+
+    private long _segTrack = NoTrack;
     private long _segStartFrame;
     private long _segOffsetFrames;
 
     // —— 时钟（seqlock：渲染线程写，任意线程读）——
     private int _clkVersion;
-    private long _clkTrack = -1;
+    private long _clkTrack = NoTrack;
     private long _clkSegStart;
     private long _clkOffset;
     private long _clkPlayed;
@@ -108,6 +112,9 @@ public sealed class PlaybackEngine : IRenderSource, IDisposable
     public event Action<string>? DeviceChanged;
 
     public string? DeviceName => _output?.DeviceName;
+
+    /// <summary>解码数据旁路（边播边分析）。在引擎线程上调用，实现不能阻塞。</summary>
+    public IDecodeTap? Tap { get; set; }
 
     /// <summary>线性增益 0..1，渲染线程以 20ms 斜坡跟随。</summary>
     public float Volume
@@ -150,7 +157,7 @@ public sealed class PlaybackEngine : IRenderSource, IDisposable
                 Interlocked.MemoryBarrier();
                 if (Volatile.Read(ref _clkVersion) != v1) continue;
 
-                if (track < 0) return new PlaybackClock(null, 0, rate, false);
+                if (track == NoTrack) return new PlaybackClock(null, 0, rate, false);
                 long pos = played;
                 if (running)
                 {
@@ -279,7 +286,7 @@ public sealed class PlaybackEngine : IRenderSource, IDisposable
         _clkPlayed = Math.Max(_segStartFrame, consumed - queuedAfter);
         _clkStamp = Stopwatch.GetTimestamp();
         _clkRate = _rate;
-        _clkRunning = _wantPlaying && !_ended && _segTrack >= 0 && _ring.Available > 0;
+        _clkRunning = _wantPlaying && !_ended && _segTrack != NoTrack && _ring.Available > 0;
         Volatile.Write(ref _clkVersion, _clkVersion + 1);
     }
 
@@ -423,9 +430,11 @@ public sealed class PlaybackEngine : IRenderSource, IDisposable
 
         int want = DecodeChunkFrames * _channels;
         if (_decodeBuf.Length < want) _decodeBuf = new float[want];
+        long startFrame = seg.Reader.PositionFrames;
         int n = seg.Reader.Read(_decodeBuf.AsSpan(0, want));
         if (n > 0)
         {
+            Tap?.Decoded(seg.Track, startFrame, _decodeBuf.AsSpan(0, n), _rate, _channels);
             int w = _ring.Write(_decodeBuf.AsSpan(0, n));
             _decodeOffset = w;
             _decodeCount = n - w;
@@ -433,6 +442,7 @@ public sealed class PlaybackEngine : IRenderSource, IDisposable
         }
 
         // EOF：无缝衔接后继，或写入结束标记。
+        Tap?.Ended(seg.Track);
         seg.Ended = true;
         if (_successor is { } next)
         {
@@ -550,7 +560,7 @@ public sealed class PlaybackEngine : IRenderSource, IDisposable
         _fade = 0f;
         _gain = _targetGain;
         _ended = true;
-        _segTrack = -1;
+        _segTrack = NoTrack;
         Volatile.Write(ref _flushAck, Volatile.Read(ref _flushRequest));
     }
 

@@ -6,12 +6,22 @@ using Microsoft.UI.Xaml.Media;
 using Solisten.App.Services;
 using Solisten.Audio.Decoding;
 using Solisten.Core.Model;
+using Solisten.Integrations.NetEase.Sync;
+using Solisten.Library.Remote;
 using FocusState = Microsoft.UI.Xaml.FocusState;
 
 namespace Solisten.App;
 
 /// <summary>曲库文件夹一行。</summary>
 public sealed record RootRow(long Id, string Path, string Status);
+
+/// <summary>网易云歌单一行。自建歌单总会同步（不能取消勾选）。</summary>
+public sealed record NetEasePlaylistRow(string Id, string Name, string Detail, bool Selected, bool CanToggle, bool CanBrowse, bool Owned)
+{
+    public string BrowseName => $"浏览 {Name}";
+    public string SyncName => $"同步 {Name}";
+    public string SyncTip => Owned ? "自建歌单总会同步" : "勾选后在下次同步时一起同步";
+}
 
 /// <summary>
 /// §8.7 设置：附着在画布右侧的薄片，不是永久侧栏。每一项修改立即生效并保存到 settings.json。
@@ -44,6 +54,7 @@ public sealed partial class SettingsPanel : UserControl
         {
             if (_scans > 0) ScanStatus.Text = $"正在读取 {p.Processed} / {p.Total}";
         });
+        if (host.NetEase is { } netease) netease.Changed += () => DispatcherQueue.Run(RefreshNetEase);
     }
 
     /// <summary>薄片的底色跟随画布的明暗（由主窗口设置）。</summary>
@@ -71,6 +82,7 @@ public sealed partial class SettingsPanel : UserControl
             MotionChoice.SelectedIndex = (int)s.ReduceMotion;
             RefreshDevices(s.OutputDeviceId);
             RefreshLibrary();
+            RefreshNetEase();
             RefreshAbout();
         }
         finally { _loading = false; }
@@ -109,8 +121,8 @@ public sealed partial class SettingsPanel : UserControl
 
         var unsupported = host.Library.Unsupported;
         UnsupportedSummary.Text = unsupported.Count == 0
-            ? "所有找到的音频文件都已导入。"
-            : $"有 {unsupported.Count} 个文件是暂不支持的格式（APE、WavPack、DSD 等），没有导入。";
+            ? ""
+            : $"{unsupported.Count} 个文件格式暂不支持（APE、WavPack、DSD 等）";
         UnsupportedExpander.Visibility = Ui.Visible(unsupported.Count > 0);
         UnsupportedList.ItemsSource = unsupported;
     }
@@ -248,6 +260,173 @@ public sealed partial class SettingsPanel : UserControl
         CanvasSettingsChanged?.Invoke();
     }
 
+    // ───────────────────────── 服务集成：网易云音乐 ─────────────────────────
+
+    private void RefreshNetEase()
+    {
+        var vm = _host?.NetEase;
+        NetEaseUnavailable.Visibility = Ui.Visible(vm is null);
+        if (vm is null)
+        {
+            NetEaseBadge.Visibility = Visibility.Collapsed;
+            NetEaseSubtitle.Text = "暂不可用";
+            NetEaseSignedOut.Visibility = NetEaseSignedIn.Visibility = NetEasePlaylists.Visibility = Visibility.Collapsed;
+            NetEaseStatus.Text = "";
+            return;
+        }
+
+        bool connected = vm.IsConnected;
+        bool syncing = vm.IsSyncing;
+        var account = vm.Account;
+
+        // 账号：已登录时显示昵称和首字，未登录时显示服务名。
+        var nickname = connected ? account?.Account.Nickname : null;
+        NetEaseAccount.Text = connected ? nickname ?? "正在确认账号…" : "网易云音乐";
+        NetEaseAvatarText.Text = string.IsNullOrEmpty(nickname) ? "云" : char.IsSurrogate(nickname[0]) ? nickname[..2] : nickname[..1].ToUpperInvariant();
+        NetEaseSubtitle.Text = connected ? (vm.Provider.IsOfficial ? "网易云音乐" : "网易云音乐 · 非官方集成") : "未登录";
+        NetEaseBadge.Visibility = Ui.Visible(connected);
+        if (connected && account is null) vm.EnsureAccount();
+
+        NetEaseSignedOut.Visibility = Ui.Visible(!connected);
+        NetEaseConsent.Visibility = Ui.Visible(!vm.Provider.IsOfficial);
+        NetEaseConsent.IsChecked = !vm.RequiresConsent;
+        NetEaseLoginButton.IsEnabled = !vm.RequiresConsent;
+
+        NetEaseSignedIn.Visibility = Ui.Visible(connected);
+        NetEaseSyncButton.IsEnabled = !syncing;
+        NetEaseCancelButton.Visibility = Ui.Visible(syncing);
+        NetEaseLogoutButton.IsEnabled = !syncing;
+        bool loading = _loading;
+        _loading = true;
+        NetEaseQualityChoice.SelectedIndex = (int)_host!.Settings.NetEaseQuality;
+        _loading = loading;
+
+        NetEaseStatus.Text = vm.Progress is { } p ? FormatProgress(p)
+            : FormatLastRun(vm.LastRun, account?.LastSyncAt, connected);
+
+        var playlists = vm.Playlists.Where(pl => !pl.RemoteDeleted).Select(pl => new NetEasePlaylistRow(
+            pl.Playlist.Id,
+            pl.Playlist.Name,
+            PlaylistDetail(pl, connected),
+            pl.Playlist.IsOwned || vm.IsSelected(pl.Playlist.Id),
+            !pl.Playlist.IsOwned && !syncing,
+            pl.Matched > 0 || (connected && pl.CachedTracks > 0),
+            pl.Playlist.IsOwned)).ToList();
+        NetEasePlaylistList.ItemsSource = playlists;
+        NetEasePlaylists.Visibility = Ui.Visible(playlists.Count > 0);
+    }
+
+    private static string PlaylistDetail(StoredPlaylist pl, bool connected)
+    {
+        var kind = pl.Playlist.IsOwned ? "自建" : "收藏";
+        if (pl.CachedTracks == 0) return $"{kind} · {pl.Playlist.TrackCount} 首 · 未同步";
+        return connected
+            ? $"{kind} · {pl.CachedTracks} 首 · {pl.Matched} 首本地文件"
+            : $"{kind} · 本地可播放 {pl.Matched} / {pl.CachedTracks} 首";
+    }
+
+    private static string FormatProgress(SyncProgress p) => p.Stage switch
+    {
+        SyncStage.Validating => "正在确认登录…",
+        SyncStage.FetchingPlaylists => "正在读取歌单…",
+        SyncStage.FetchingTracks => $"同步中 · 歌单 {p.PlaylistsDone}/{p.PlaylistsTotal} · 歌曲 {p.TracksSeen}/{p.TracksTotal}",
+        SyncStage.Matching => "正在匹配本地文件…",
+        _ => "同步完成",
+    };
+
+    private static string FormatLastRun(SyncRun? run, DateTimeOffset? lastSync, bool connected)
+    {
+        if (run is null) return connected ? "还没有同步过" : "";
+        var when = lastSync is { } at ? FormatWhen(at) : "";
+        return run.Status switch
+        {
+            SyncRunStatus.Succeeded => $"{when} 已同步 · {run.PlaylistsSeen} 个歌单 · {run.TracksSeen} 首",
+            SyncRunStatus.PartiallySucceeded => $"{when} 部分同步 · {run.ErrorMessage}",
+            SyncRunStatus.Cancelled => "上次同步已取消",
+            SyncRunStatus.Running => "正在同步…",
+            _ => $"同步失败：{run.ErrorMessage}",
+        };
+    }
+
+    private static string FormatWhen(DateTimeOffset at)
+    {
+        var local = at.ToLocalTime();
+        return local.Date == DateTime.Today ? $"今天 {local:HH:mm}" : $"{local:yyyy-MM-dd HH:mm}";
+    }
+
+    private void OnNetEaseConsentClick(object sender, RoutedEventArgs e)
+    {
+        if (_loading || _host?.NetEase is not { } vm) return;
+        vm.AcceptUnofficial(NetEaseConsent.IsChecked == true);
+        RefreshNetEase();
+    }
+
+    private async void OnNetEaseLoginClick(object sender, RoutedEventArgs e)
+    {
+        if (_host?.NetEase is not { } vm || vm.RequiresConsent) return;
+        var dialog = new Integrations.NetEaseLoginDialog(vm.Login, _host!.Log.Write) { XamlRoot = XamlRoot, RequestedTheme = ActualTheme };
+        await dialog.ShowAsync();
+        if (dialog.Account is not { } account) return;
+        vm.OnSignedIn(account);
+
+        var ask = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            RequestedTheme = ActualTheme,
+            Title = $"已登录：{account.Nickname}",
+            Content = "是否立即同步歌单？默认只同步你创建的歌单，收藏歌单可以稍后勾选。",
+            PrimaryButtonText = "立即同步",
+            CloseButtonText = "稍后",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+        if (await ask.ShowAsync() == ContentDialogResult.Primary) await vm.SyncNowAsync();
+    }
+
+    private async void OnNetEaseSyncClick(object sender, RoutedEventArgs e)
+    {
+        if (_host?.NetEase is { } vm) await vm.SyncNowAsync();
+    }
+
+    private void OnNetEaseCancelClick(object sender, RoutedEventArgs e) => _host?.NetEase?.CancelSync();
+
+    private async void OnNetEaseLogoutClick(object sender, RoutedEventArgs e)
+    {
+        if (_host?.NetEase is not { } vm) return;
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            RequestedTheme = ActualTheme,
+            Title = "退出网易云音乐？",
+            Content = "本机保存的登录信息会被删除。已同步的歌单可以保留（以后重新登录时继续使用），也可以一起删除。本地音乐文件和曲库不受影响。",
+            PrimaryButtonText = "退出，保留歌单",
+            SecondaryButtonText = "退出并删除歌单",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Close,
+        };
+        var result = await dialog.ShowAsync();
+        if (result == ContentDialogResult.None) return;
+        await vm.LogoutAsync(deleteCache: result == ContentDialogResult.Secondary);
+    }
+
+    private void OnNetEaseQualityChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || _host?.NetEase is not { } vm || NetEaseQualityChoice.SelectedIndex < 0) return;
+        vm.SetQuality((Solisten.Integrations.NetEase.Api.StreamQuality)NetEaseQualityChoice.SelectedIndex);
+    }
+
+    private void OnNetEaseBrowseClick(object sender, RoutedEventArgs e)
+    {
+        if (_host is not { } host || (sender as FrameworkElement)?.Tag is not string id) return;
+        if (host.ShowRemotePlaylist(id) > 0) CloseRequested?.Invoke();
+        else NetEaseStatus.Text = "这个歌单里没有可以播放的歌曲：登录后可以在线播放，或者把音乐文件加入曲库。";
+    }
+
+    private void OnNetEasePlaylistClick(object sender, RoutedEventArgs e)
+    {
+        if (_host?.NetEase is not { } vm || sender is not CheckBox { Tag: string id } box) return;
+        vm.SetSelected(id, box.IsChecked == true);
+    }
+
     // ───────────────────────── 关于 ─────────────────────────
 
     private void RefreshAbout()
@@ -256,9 +435,10 @@ public sealed partial class SettingsPanel : UserControl
         var version = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "dev";
         int plus = version.IndexOf('+');
         if (plus > 0) version = version[..plus];
-        var ffmpeg = FFmpegLoader.IsAvailable ? $"FFmpeg {FFmpegLoader.Version}" : "FFmpeg 未找到（只能播放 WAV）";
-        AboutVersion.Text = $"Solisten {version} · {ffmpeg}";
-        AboutData.Text = $"数据保存在 {host.Paths.Root}";
+        // FFmpeg 的版本串很长（n8.1.3-18-g…-日期）：只显示发行版本号。
+        var ffmpeg = FFmpegLoader.IsAvailable ? $"FFmpeg {FFmpegLoader.Version?.Split('-')[0]}" : "FFmpeg 未找到（只能播放 WAV）";
+        AboutVersion.Text = $"Solisten {version}";
+        AboutData.Text = $"{ffmpeg} · 数据保存在 {host.Paths.Root}";
     }
 
     private void OnLicensesClick(object sender, RoutedEventArgs e)

@@ -111,11 +111,50 @@ public static class SoundFeatureAnalyzer
             _count = 0;
         }
 
+        /// <summary>已经送入的数据在时间轴上的位置（帧）。</summary>
+        public long Position => _totalFrames;
+
+        /// <summary>有一段没有数据（跳转跳过了，或从中途开始）：只适合实时显示，不能当作完整的离线特征保存。</summary>
+        public bool HasGaps => _padFrom >= 0;
+
+        private int _padFrom = -1;
+
+        /// <summary>
+        /// 跳到时间轴上的另一个位置（播放中跳转）。向前跳过的部分补成静音块并记为空缺；
+        /// 向后跳回时丢弃之后的块，从那里重新累积（重新播放过的空缺不再算空缺）。
+        /// </summary>
+        public void JumpTo(long frame)
+        {
+            if (frame == _totalFrames) return;
+            _sLow = _sMid = _sHigh = _sAll = _sL = _sR = 0;
+            _count = 0;
+            int target = (int)Math.Floor(Math.Max(0, frame) / _blockLength);
+            if (target < _blocks.Count)
+            {
+                _blocks.RemoveRange(target, _blocks.Count - target);
+                if (_padFrom >= target) _padFrom = -1;
+            }
+            else if (target > _blocks.Count)
+            {
+                if (_padFrom < 0) _padFrom = _blocks.Count;
+                int n = Math.Max(1, (int)Math.Round(_blockLength));
+                while (_blocks.Count < target) _blocks.Add((0, 0, 0, 0, 0, 0, n));
+            }
+            _totalFrames = Math.Max(0, frame);
+            _nextBoundary = (target + 1) * _blockLength;
+        }
+
+        /// <summary>按目前已有的完整块计算特征（不改变累积状态，可以继续 Add）。用于边播边分析。</summary>
+        public SoundFeatures Snapshot() => Build(_blocks.Count, TimeSpan.FromSeconds(_blocks.Count * _blockLength / _rate));
+
         public SoundFeatures Finish()
         {
             Flush();
-            var duration = TimeSpan.FromSeconds(_totalFrames / (double)_rate);
-            int n = _blocks.Count;
+            return Build(_blocks.Count, TimeSpan.FromSeconds(_totalFrames / (double)_rate));
+        }
+
+        private SoundFeatures Build(int n, TimeSpan duration)
+        {
             var low = new double[n];
             var mid = new double[n];
             var high = new double[n];

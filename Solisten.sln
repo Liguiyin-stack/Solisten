@@ -25,6 +25,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Solisten.App", "src\Soliste
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Solisten.Rendering.Tests", "tests\Solisten.Rendering.Tests\Solisten.Rendering.Tests.csproj", "{388738DF-F324-4986-9F84-A29655B04CE1}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Solisten.Integrations.NetEase", "src\Solisten.Integrations.NetEase\Solisten.Integrations.NetEase.csproj", "{198401BD-5D10-4B38-BA97-39477737A74D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Solisten.Integrations.NetEase.Tests", "tests\Solisten.Integrations.NetEase.Tests\Solisten.Integrations.NetEase.Tests.csproj", "{0E5D23DB-969E-41ED-8878-A1617CF26DFA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -143,6 +147,30 @@ Global
 		{388738DF-F324-4986-9F84-A29655B04CE1}.Release|x64.Build.0 = Release|x64
 		{388738DF-F324-4986-9F84-A29655B04CE1}.Release|x86.ActiveCfg = Release|x64
 		{388738DF-F324-4986-9F84-A29655B04CE1}.Release|x86.Build.0 = Release|x64
+		{198401BD-5D10-4B38-BA97-39477737A74D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{198401BD-5D10-4B38-BA97-39477737A74D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{198401BD-5D10-4B38-BA97-39477737A74D}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{198401BD-5D10-4B38-BA97-39477737A74D}.Debug|x64.Build.0 = Debug|Any CPU
+		{198401BD-5D10-4B38-BA97-39477737A74D}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{198401BD-5D10-4B38-BA97-39477737A74D}.Debug|x86.Build.0 = Debug|Any CPU
+		{198401BD-5D10-4B38-BA97-39477737A74D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{198401BD-5D10-4B38-BA97-39477737A74D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{198401BD-5D10-4B38-BA97-39477737A74D}.Release|x64.ActiveCfg = Release|Any CPU
+		{198401BD-5D10-4B38-BA97-39477737A74D}.Release|x64.Build.0 = Release|Any CPU
+		{198401BD-5D10-4B38-BA97-39477737A74D}.Release|x86.ActiveCfg = Release|Any CPU
+		{198401BD-5D10-4B38-BA97-39477737A74D}.Release|x86.Build.0 = Release|Any CPU
+		{0E5D23DB-969E-41ED-8878-A1617CF26DFA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0E5D23DB-969E-41ED-8878-A1617CF26DFA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0E5D23DB-969E-41ED-8878-A1617CF26DFA}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{0E5D23DB-969E-41ED-8878-A1617CF26DFA}.Debug|x64.Build.0 = Debug|Any CPU
+		{0E5D23DB-969E-41ED-8878-A1617CF26DFA}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{0E5D23DB-969E-41ED-8878-A1617CF26DFA}.Debug|x86.Build.0 = Debug|Any CPU
+		{0E5D23DB-969E-41ED-8878-A1617CF26DFA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0E5D23DB-969E-41ED-8878-A1617CF26DFA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0E5D23DB-969E-41ED-8878-A1617CF26DFA}.Release|x64.ActiveCfg = Release|Any CPU
+		{0E5D23DB-969E-41ED-8878-A1617CF26DFA}.Release|x64.Build.0 = Release|Any CPU
+		{0E5D23DB-969E-41ED-8878-A1617CF26DFA}.Release|x86.ActiveCfg = Release|Any CPU
+		{0E5D23DB-969E-41ED-8878-A1617CF26DFA}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -157,5 +185,7 @@ Global
 		{B6E493ED-52AC-4E34-B37D-5C00571B5BA9} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{C3B410E8-376A-41A1-AAD4-B40C7FA2ABF4} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{388738DF-F324-4986-9F84-A29655B04CE1} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{198401BD-5D10-4B38-BA97-39477737A74D} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{0E5D23DB-969E-41ED-8878-A1617CF26DFA} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal

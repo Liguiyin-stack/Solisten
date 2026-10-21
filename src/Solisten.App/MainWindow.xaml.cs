@@ -73,6 +73,8 @@ public sealed partial class MainWindow : Window
         _suppressVolumeEvent = false;
 
         ViewModel.VisualsChanged += OnVisualsChanged;
+        // 边播边分析的实时特征：只交给正在显示的那首歌（分析线程上触发，聆听空间的属性可以跨线程设置）。
+        host.LiveFeaturesUpdated += (id, f) => { if (Interlocked.Read(ref _visualTrack) == id.Value) Space.LiveFeatures = f; };
         ViewModel.LayerChanged += OnLayerChanged;
         ViewModel.FocusIndexChanged += BringFocusIntoView;
         ViewModel.PropertyChanged += OnViewModelPropertyChanged;
@@ -96,6 +98,7 @@ public sealed partial class MainWindow : Window
             if (ReduceMotion) Progress.Invalidate();
         };
         _tick.Start();
+        InitLyrics();
 
         _hideControls = DispatcherQueue.CreateTimer();
         _hideControls.Interval = ControlsIdle;
@@ -222,8 +225,12 @@ public sealed partial class MainWindow : Window
 
     // ───────────────────────── 切歌事务 / 外观 ─────────────────────────
 
+    private long _visualTrack;
+
     private void OnVisualsChanged(TrackVisuals v, bool transition)
     {
+        if (Interlocked.Exchange(ref _visualTrack, v.Track.Id.Value) != v.Track.Id.Value) Space.LiveFeatures = null;
+        LoadLyricsFor(v.Track);
         ApplyInk(v.Palette.TextOnBase);
         Progress.Model = new ProgressModel(v.Track.Id, v.Track.Meta.Duration, v.Palette, v.Markers,
             _accessibility.HighContrast, SystemColor("SystemColorWindowTextColor"), SystemColor("SystemColorHighlightColor"));
@@ -304,7 +311,10 @@ public sealed partial class MainWindow : Window
         if (Root.ActualHeight <= 0 || Root.ActualWidth <= 0 || Stage.ActualHeight <= 0 || Stage.ActualWidth <= 0) return;
         var origin = Stage.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(0, 0));
         // 舞台可能因侧边面板而变窄：封面以舞台（而不是整个窗口）为准居中和取大小
-        double side = CoverSide(Stage.ActualWidth, Stage.ActualHeight);
+        // 歌词模式下舞台只有左半边：封面按左栏取大小（占左栏宽度的六成）
+        double side = _lyricsMode
+            ? Math.Max(80, Math.Min(Stage.ActualWidth * 0.62, Stage.ActualHeight * 0.78))
+            : CoverSide(Stage.ActualWidth, Stage.ActualHeight);
         Space.SetStage(
             (float)((origin.X + Stage.ActualWidth / 2) / Root.ActualWidth),
             (float)((origin.Y + Stage.ActualHeight / 2) / Root.ActualHeight),
@@ -314,7 +324,98 @@ public sealed partial class MainWindow : Window
     internal static double CoverSide(double windowWidth, double stageHeight) =>
         Math.Max(80, Math.Min(Math.Clamp(windowWidth * 0.26, windowWidth * 0.22, windowWidth * 0.30), stageHeight * 0.62));
 
-    private const double SidePanelWidth = 420;
+
+    // ───────────────────────── 歌词 ─────────────────────────
+
+    /// <summary>画布至少这么宽才显示整屏歌词（否则封面和歌词都太挤，回到封面居中）。</summary>
+    private const double MinLyricsCanvasWidth = 900;
+
+    private DispatcherQueueTimer? _lyricsTick;
+    private CancellationTokenSource? _lyricsLoad;
+    private TrackId? _lyricsTrack;
+    private bool _lyricsMode;
+
+    private void InitLyrics()
+    {
+        LyricsPanel.Ink = (Microsoft.UI.Xaml.Media.Brush)Root.Resources["InkBrush"];
+        LyricsPanel.SeekRequested += position => ViewModel.Dispatch(new Seek(position));
+        LyricsButton.IsChecked = _host.Settings.ShowLyrics;
+        CanvasLayer.SizeChanged += (_, _) => ApplyLyricsLayout();
+        _lyricsTick = DispatcherQueue.CreateTimer();
+        _lyricsTick.Interval = TimeSpan.FromMilliseconds(80);
+        _lyricsTick.Tick += (_, _) =>
+        {
+            if (_host.Store.State.Playing is { } p) LyricsPanel.Update(_host.PositionOf(p.Track).Position);
+        };
+    }
+
+    /// <summary>切到另一首歌：加载它的歌词（先清空旧歌词，布局等新歌词到了再决定，避免来回跳）。</summary>
+    private void LoadLyricsFor(Track track)
+    {
+        if (_lyricsTrack == track.Id) return;
+        _lyricsTrack = track.Id;
+        _lyricsLoad?.Cancel();
+        _lyricsLoad?.Dispose();
+        var cts = _lyricsLoad = new CancellationTokenSource();
+        LyricsPanel.SetLyrics(null);
+        _ = LoadLyricsAsync(track, cts.Token);
+    }
+
+    private async Task LoadLyricsAsync(Track track, CancellationToken ct)
+    {
+        Lyrics? lyrics = null;
+        try { lyrics = await _host.Lyrics.LoadAsync(track, ct); }
+        catch (OperationCanceledException) { return; }
+        catch (Exception e) when (e is not OutOfMemoryException) { _host.Log.Write($"lyrics failed {track.Id}: {e.Message}"); }
+        if (ct.IsCancellationRequested || _lyricsTrack != track.Id) return;
+        LyricsPanel.ReduceMotion = ReduceMotion;
+        LyricsPanel.SetLyrics(lyrics);
+        ApplyLyricsLayout();
+        if (_host.Store.State.Playing is { } p) LyricsPanel.Update(_host.PositionOf(p.Track).Position);
+    }
+
+    /// <summary>打开了歌词、有歌词且画布够宽：封面移到左栏，右栏显示歌词；否则封面居中、歌名在上方。</summary>
+    private void ApplyLyricsLayout()
+    {
+        LyricsButton.IsChecked = _host.Settings.ShowLyrics;
+        bool show = _host.Settings.ShowLyrics && LyricsPanel.Lyrics is { IsEmpty: false } && CanvasLayer.ActualWidth >= MinLyricsCanvasWidth;
+        if (show != _lyricsMode)
+        {
+            _lyricsMode = show;
+            LyricsColumn.Width = show ? new GridLength(1.15, GridUnitType.Star) : new GridLength(0);
+            LyricsPanel.Visibility = Ui.Visible(show);
+            LyricsIdentity.Visibility = Ui.Visible(show);
+            Identity.Visibility = Ui.Collapsed(show);
+            // 列宽改了但布局还没重算：先完成布局再告诉聆听空间封面的新位置，布局结束后再补一次。
+            CanvasLayer.UpdateLayout();
+            UpdateStage();
+            DispatcherQueue.Run(UpdateStage, Microsoft.UI.Dispatching.DispatcherQueuePriority.Low);
+        }
+        if (show && LyricsPanel.Lyrics is { IsSynced: true }) _lyricsTick?.Start();
+        else _lyricsTick?.Stop();
+    }
+
+    private void OnLyricsClick(object sender, RoutedEventArgs e)
+    {
+        // 以按钮点击后的勾选状态为准（ToggleButton 自己已经切换过了）。
+        SetLyricsShown(LyricsButton.IsChecked == true);
+        Root.Focus(FocusState.Programmatic);
+    }
+
+    private void ToggleLyrics() => SetLyricsShown(!_host.Settings.ShowLyrics);
+
+    /// <summary>打开或关闭歌词并保存。打开了却显示不出来时说明原因。</summary>
+    private void SetLyricsShown(bool show)
+    {
+        _host.UpdateSettings(s => s with { ShowLyrics = show });
+        ApplyLyricsLayout();
+        if (!show) ShowToast("已隐藏歌词");
+        else if (LyricsPanel.Lyrics is not { IsEmpty: false }) ShowToast("这首歌没有找到歌词");
+        else if (!_lyricsMode) ShowToast("窗口太窄，放大窗口后显示歌词");
+        else ShowToast("已显示歌词");
+    }
+    /// <summary>设置卡片（460 + 右侧 12 的间隙）和资料面板中较宽的那个。</summary>
+    private const double SidePanelWidth = 472;
     /// <summary>侧边面板打开后，画布至少要保留这么宽才让位；更窄时面板直接覆盖在画布上。</summary>
     private const double MinCanvasWidth = 560;
 
@@ -329,7 +430,7 @@ public sealed partial class MainWindow : Window
     {
         bool hc = _accessibility.HighContrast;
         SetGlassFor("navigate", NavigateLayer, GlassAttach.Left | GlassAttach.Right | GlassAttach.Bottom, hc);
-        SetGlassFor("settings", SettingsSheet, GlassAttach.Right | GlassAttach.Bottom, hc);
+        SetGlassFor("settings", SettingsSheet, GlassAttach.None, hc); // 浮在右侧的卡片：四角圆角，和窗口边缘留出间隙
         SetGlassFor("info", InfoLayer, GlassAttach.Right | GlassAttach.Bottom, hc);
 
         bool roomy = Root.ActualWidth - SidePanelWidth >= MinCanvasWidth;
@@ -504,6 +605,13 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        if (e.Key == VirtualKey.L && !ctrl && layer == Layer.Listen)
+        {
+            ToggleLyrics();
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == VirtualKey.S && !ctrl && layer == Layer.Listen)
         {
             Shuffle();
@@ -544,6 +652,8 @@ public sealed partial class MainWindow : Window
         if (layer == Layer.Navigate)
         {
             _suppressArrangementEvent = true;
+            // 有网易云歌单（已同步）时才显示这个排列。
+            PlaylistsItem.Visibility = Ui.Visible(!_host.Store.State.Library.Playlists.IsEmpty || _host.Store.State.Arrangement == Arrangement.Playlists);
             ArrangementBox.SelectedIndex = (int)_host.Store.State.Arrangement;
             _suppressArrangementEvent = false;
         }
@@ -622,6 +732,23 @@ public sealed partial class MainWindow : Window
         var s = _host.Store.State;
         if (s.PlayingTrack is not { } t) return;
         var db = _host.Library.Database;
+        if (t.Id.IsRemote)
+        {
+            // 在线曲目：没有本地文件、标签、备注和标记。
+            InfoPath.Text = $"网易云音乐 · 在线播放（{(_host.Settings.NetEaseQuality switch
+            {
+                Solisten.Integrations.NetEase.Api.StreamQuality.Standard => "标准",
+                Solisten.Integrations.NetEase.Api.StreamQuality.Higher => "较高",
+                Solisten.Integrations.NetEase.Api.StreamQuality.Lossless => "无损",
+                _ => "极高",
+            })}音质，按账号权限）";
+            InfoFormat.Text = $"{Rendering.Progress.ProgressLayout.FormatTime(t.Meta.Duration)} · {t.Meta.Album}";
+            InfoTags.Text = "";
+            InfoNote.Text = "";
+            FillMarkers(t.Id);
+            FavoriteButton.IsChecked = false;
+            return;
+        }
         InfoPath.Text = t.Path;
         long size = 0;
         try { size = new FileInfo(t.Path).Length; } catch (IOException) { }
@@ -692,8 +819,14 @@ public sealed partial class MainWindow : Window
 
     private void OnRevealInExplorer(object sender, RoutedEventArgs e)
     {
-        if (_host.Store.State.PlayingTrack is { } t)
-            Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{t.Path}\"") { UseShellExecute = false });
+        if (_host.Store.State.PlayingTrack is not { } t) return;
+        if (t.Id.IsRemote)
+        {
+            // 在线曲目没有本地文件：在浏览器中打开网易云的歌曲页。
+            Process.Start(new ProcessStartInfo($"https://music.163.com/song?id={-t.Id.Value}") { UseShellExecute = true });
+            return;
+        }
+        Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{t.Path}\"") { UseShellExecute = false });
     }
 
     private void OnFavoriteClick(object sender, RoutedEventArgs e)

@@ -42,6 +42,8 @@ public sealed record ClearQuery : AppAction;
 public sealed record SearchResultsArrived(string Query, ImmutableArray<TrackId> Results) : AppAction;
 /// <summary>外部打开文件：以该文件所在文件夹为临时 BrowseContext，不自动切歌。</summary>
 public sealed record RevealTrack(TrackId Track) : AppAction;
+/// <summary>以外部来源（例如网易云歌单）为 BrowseContext，焦点放在 FocusIndex（-1 表示正在播放的歌或第一首），不自动切歌。</summary>
+public sealed record ShowContext(PlaybackContext Context, int FocusIndex = -1) : AppAction;
 
 // —— 层 ——
 public sealed record EnterInfo : AppAction;
