@@ -46,6 +46,11 @@
                                     HorizontalAlignment="Left" VerticalAlignment="Top" Margin="6" Padding="6,1,7,2">
                                 <TextBlock Text="◉ 正在播放" FontSize="11" Foreground="White" />
                             </Border>
+                            <!-- 选中的卡片：再点一下（或双击、Enter）播放 -->
+                            <Border Visibility="{x:Bind local:Ui.PlayHint(IsFocused, IsPlaying), Mode=OneWay}" Width="40" Height="40" CornerRadius="20"
+                                    Background="#B3000000" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
+                                <FontIcon Glyph="&#xE768;" FontSize="16" Foreground="White" Margin="2,0,0,0" />
+                            </Border>
                         </Grid>
                     </Border>
                     <TextBlock Grid.Row="2" Text="{x:Bind Title}" Margin="4,6,4,0" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource InkBrush}" TextTrimming="CharacterEllipsis" />
@@ -94,56 +99,65 @@
                     <ColumnDefinition x:Name="StageColumn" Width="*" />
                     <ColumnDefinition x:Name="LyricsColumn" Width="0" />
                 </Grid.ColumnDefinitions>
-                <Grid>
+                <!-- 封面组：平时铺满舞台区（封面居中）；歌词模式下是"封面 + 歌名"一组，在左栏里垂直居中，尺寸由代码按窗口计算 -->
+                <Grid x:Name="StageGroup">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="*" />
+                        <RowDefinition x:Name="StageRow" Height="*" />
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
                     <Border x:Name="Stage" Background="Transparent" IsHitTestVisible="False" />
-                    <StackPanel x:Name="LyricsIdentity" Grid.Row="1" HorizontalAlignment="Center" Margin="32,0,32,12" MaxWidth="600" Visibility="Collapsed"
+                    <StackPanel x:Name="LyricsIdentity" Grid.Row="1" HorizontalAlignment="Stretch" Margin="2,24,0,0" Visibility="Collapsed"
                                 Tapped="OnIdentityTapped">
-                        <TextBlock Text="{x:Bind ViewModel.Title, Mode=OneWay}" FontFamily="{StaticResource CanvasFont}" FontSize="30" FontWeight="SemiBold"
-                                   Foreground="{StaticResource InkBrush}" TextAlignment="Center" TextTrimming="CharacterEllipsis" MaxLines="2" TextWrapping="WrapWholeWords" />
-                        <TextBlock Text="{x:Bind ViewModel.Subtitle, Mode=OneWay}" FontSize="16" Margin="0,4,0,0"
-                                   Foreground="{StaticResource InkSoftBrush}" TextAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        <TextBlock x:Name="LyricsTitle" Text="{x:Bind ViewModel.Title, Mode=OneWay}" FontFamily="{StaticResource CanvasFont}" FontSize="24" FontWeight="SemiBold"
+                                   Foreground="{StaticResource InkBrush}" TextAlignment="Left" TextTrimming="CharacterEllipsis" MaxLines="2" TextWrapping="WrapWholeWords" />
+                        <TextBlock x:Name="LyricsSubtitle" Text="{x:Bind ViewModel.Subtitle, Mode=OneWay}" FontSize="15" Margin="0,4,0,0"
+                                   Foreground="{StaticResource InkSoftBrush}" TextAlignment="Left" TextTrimming="CharacterEllipsis" />
                     </StackPanel>
                 </Grid>
-                <local:LyricsView x:Name="LyricsPanel" Grid.Column="1" Margin="0,8,72,48" Visibility="Collapsed" />
+                <local:LyricsView x:Name="LyricsPanel" Grid.Column="1" Visibility="Collapsed" />
             </Grid>
 
             <!-- 极简播放进度：3px 细线，悬停变粗，点击或拖动跳转 -->
-            <progress:ProgressLine x:Name="Progress" Grid.Row="3" Height="56" />
+            <progress:ProgressLine x:Name="Progress" Grid.Row="3" Height="56">
+                <progress:ProgressLine.OpacityTransition>
+                    <ScalarTransition />
+                </progress:ProgressLine.OpacityTransition>
+            </progress:ProgressLine>
 
-            <!-- 时间：常驻，居中在进度线下方 -->
+            <!-- 时间：居中在进度线下方；和进度线、控制按钮一起，无操作时淡出 -->
             <TextBlock x:Name="TimeLabel" Grid.Row="4" Text="{x:Bind ViewModel.TimeText, Mode=OneWay}" HorizontalAlignment="Center" TextAlignment="Center"
-                       FontSize="14" Foreground="{StaticResource InkBrush}" Margin="0,0,0,6" />
+                       FontSize="14" Foreground="{StaticResource InkBrush}" Margin="0,0,0,6">
+                <TextBlock.OpacityTransition>
+                    <ScalarTransition />
+                </TextBlock.OpacityTransition>
+            </TextBlock>
 
             <!-- ActionAnchor：播放控制只在有操作时出现，无操作时整行淡出（包括播放/暂停按钮） -->
             <StackPanel x:Name="RevealBar" Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="2" Opacity="0" IsHitTestVisible="False">
                 <StackPanel.OpacityTransition>
                     <ScalarTransition />
                 </StackPanel.OpacityTransition>
-                <Button Style="{StaticResource CanvasButton}" Click="OnFolderClick" ToolTipService.ToolTip="添加音乐文件夹">
+                <Button Style="{StaticResource CanvasButton}" Click="OnFolderClick" ToolTipService.ToolTip="添加音乐文件夹" AutomationProperties.Name="添加音乐文件夹">
                     <FontIcon Glyph="&#xE8F4;" FontSize="16" />
                 </Button>
-                <Button Style="{StaticResource CanvasButton}" Click="OnNavigateClick" ToolTipService.ToolTip="寻找下一首 (↑)">
+                <Button Style="{StaticResource CanvasButton}" Click="OnNavigateClick" ToolTipService.ToolTip="寻找下一首 (↑)" AutomationProperties.Name="目录">
                     <FontIcon Glyph="&#xE8FD;" FontSize="16" />
                 </Button>
-                <Button Style="{StaticResource CanvasButton}" Click="OnPreviousClick" ToolTipService.ToolTip="上一首 (Ctrl+←)">
+                <Button Style="{StaticResource CanvasButton}" Click="OnPreviousClick" ToolTipService.ToolTip="上一首 (Ctrl+←)" AutomationProperties.Name="上一首">
                     <FontIcon Glyph="&#xE892;" FontSize="18" />
                 </Button>
                 <Button x:Name="PlayButton" Style="{StaticResource CanvasButton}" Padding="14" CornerRadius="26" Click="OnPlayClick" ToolTipService.ToolTip="播放 / 暂停 (Space)"
                         AutomationProperties.Name="播放 / 暂停">
                     <FontIcon x:Name="PlayGlyph" Glyph="{x:Bind local:Ui.PlayGlyph(ViewModel.IsPaused), Mode=OneWay}" FontSize="22" />
                 </Button>
-                <Button Style="{StaticResource CanvasButton}" Click="OnNextClick" ToolTipService.ToolTip="下一首 (Ctrl+→)">
+                <Button Style="{StaticResource CanvasButton}" Click="OnNextClick" ToolTipService.ToolTip="下一首 (Ctrl+→)" AutomationProperties.Name="下一首">
                     <FontIcon Glyph="&#xE893;" FontSize="18" />
                 </Button>
                 <Button Style="{StaticResource CanvasButton}" Click="OnShuffleClick" ToolTipService.ToolTip="在当前范围内随机 (S)" AutomationProperties.Name="在当前范围内随机">
                     <FontIcon Glyph="&#xE8B1;" FontSize="16" />
                 </Button>
                 <ToggleButton x:Name="RepeatButton" IsChecked="{x:Bind ViewModel.IsRepeatOne, Mode=OneWay}" Click="OnRepeatClick" Background="Transparent" BorderThickness="0"
-                              Foreground="{StaticResource InkBrush}" CornerRadius="20" Padding="10" IsTabStop="False" ToolTipService.ToolTip="单曲循环 (R)">
+                              Foreground="{StaticResource InkBrush}" CornerRadius="20" Padding="10" IsTabStop="False" ToolTipService.ToolTip="单曲循环 (R)" AutomationProperties.Name="单曲循环">
                     <FontIcon Glyph="&#xE8ED;" FontSize="16" />
                 </ToggleButton>
                 <ToggleButton x:Name="LyricsButton" Click="OnLyricsClick" Background="Transparent" BorderThickness="0"
@@ -152,9 +166,9 @@
                     <FontIcon Glyph="&#xE7F0;" FontSize="16" />
                 </ToggleButton>
                 <FontIcon x:Name="VolumeIcon" Glyph="&#xE767;" FontSize="16" Foreground="{StaticResource InkBrush}" Margin="8,0,4,0" VerticalAlignment="Center" />
-                <Slider x:Name="VolumeSlider" Width="110" Minimum="0" Maximum="1" StepFrequency="0.01" VerticalAlignment="Center"
+                <Slider x:Name="VolumeSlider" AutomationProperties.Name="音量" Width="110" Minimum="0" Maximum="1" StepFrequency="0.01" VerticalAlignment="Center"
                         ValueChanged="OnVolumeChanged" IsTabStop="False" IsThumbToolTipEnabled="False" />
-                <Button Style="{StaticResource CanvasButton}" Click="OnInfoClick" ToolTipService.ToolTip="资料 (↓)">
+                <Button Style="{StaticResource CanvasButton}" Click="OnInfoClick" ToolTipService.ToolTip="资料 (↓)" AutomationProperties.Name="资料">
                     <FontIcon Glyph="&#xE946;" FontSize="16" />
                 </Button>
                 <Button Style="{StaticResource CanvasButton}" Click="OnSettingsClick" ToolTipService.ToolTip="设置 (Ctrl+,)" AutomationProperties.Name="设置">
@@ -188,14 +202,20 @@
                         <ComboBoxItem Content="聆听记录" Tag="Listening" />
                         <ComboBoxItem x:Name="PlaylistsItem" Content="网易云歌单" Tag="Playlists" />
                     </ComboBox>
-                    <TextBlock Text="Enter 播放 · Esc 返回 · . 回到正在播放" VerticalAlignment="Center" FontSize="12" Margin="12,0,0,0" Foreground="{StaticResource InkSoftBrush}" />
+                    <TextBlock Text="单击选中，再单击或双击播放 · 右键更多" VerticalAlignment="Center" FontSize="12" Margin="12,0,4,0" Foreground="{StaticResource InkSoftBrush}" />
+                    <Button Style="{StaticResource CanvasButton}" Click="OnReturnToPlayingClick" ToolTipService.ToolTip="回到正在播放 (.)" AutomationProperties.Name="回到正在播放">
+                        <FontIcon Glyph="&#xE81D;" FontSize="14" />
+                    </Button>
+                    <Button Style="{StaticResource CanvasButton}" Click="OnNavigateCloseClick" ToolTipService.ToolTip="关闭 (Esc)" AutomationProperties.Name="关闭目录">
+                        <FontIcon Glyph="&#xE711;" FontSize="12" />
+                    </Button>
                 </StackPanel>
             </Grid>
             <ScrollViewer x:Name="RibbonScroller" Grid.Row="1" HorizontalScrollMode="Enabled" HorizontalScrollBarVisibility="Hidden"
                           VerticalScrollMode="Disabled" VerticalScrollBarVisibility="Disabled" Padding="40,0" IsTabStop="False"
                           PointerWheelChanged="OnRibbonWheel">
                 <ItemsRepeater x:Name="Ribbon" ItemsSource="{x:Bind ViewModel.RibbonItems}" ItemTemplate="{StaticResource RibbonCard}"
-                               Tapped="OnRibbonTapped" DoubleTapped="OnRibbonDoubleTapped">
+                               Tapped="OnRibbonTapped" DoubleTapped="OnRibbonDoubleTapped" RightTapped="OnRibbonRightTapped">
                     <ItemsRepeater.Layout>
                         <StackLayout Orientation="Horizontal" Spacing="10" />
                     </ItemsRepeater.Layout>
@@ -212,7 +232,7 @@
                     <StackPanel Spacing="10">
                         <Grid>
                             <TextBlock Text="资料" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource InkBrush}" />
-                            <Button Style="{StaticResource CanvasButton}" HorizontalAlignment="Right" Padding="6" Click="OnInfoCloseClick">
+                            <Button Style="{StaticResource CanvasButton}" HorizontalAlignment="Right" Padding="6" Click="OnInfoCloseClick" ToolTipService.ToolTip="关闭 (Esc)" AutomationProperties.Name="关闭资料">
                                 <FontIcon Glyph="&#xE711;" FontSize="12" />
                             </Button>
                         </Grid>
@@ -254,7 +274,7 @@
         <StackPanel x:Name="EmptyGuide" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16"
                     Visibility="{x:Bind local:Ui.Visible(ViewModel.IsLibraryEmpty), Mode=OneWay}">
             <TextBlock Text="一首歌，一个空间" FontFamily="{StaticResource CanvasFont}" FontSize="34" FontWeight="SemiBold" HorizontalAlignment="Center" Foreground="{StaticResource InkBrush}" />
-            <TextBlock Text="选择一个本地音乐文件夹。Solisten 只读取你的文件，不联网，也不改写它们。" FontSize="14" HorizontalAlignment="Center" Foreground="{StaticResource InkSoftBrush}" />
+            <TextBlock Text="选择一个本地音乐文件夹。Solisten 只读取你的文件，不会改写它们。" FontSize="14" HorizontalAlignment="Center" Foreground="{StaticResource InkSoftBrush}" />
             <Button Content="选择音乐文件夹" HorizontalAlignment="Center" Padding="20,10" Click="OnFolderClick" Style="{StaticResource AccentButtonStyle}" />
             <TextBlock x:Name="ScanText" FontSize="12" HorizontalAlignment="Center" Foreground="{StaticResource InkSoftBrush}" />
         </StackPanel>

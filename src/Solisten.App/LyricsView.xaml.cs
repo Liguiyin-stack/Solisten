@@ -29,10 +29,11 @@ public sealed partial class LyricsView : UserControl
 {
     // —— 版式 ——
     private const float PadX = 14;
-    private const float RowGap = 26;
-    private const float TranslationGap = 6;
-    private const float MainFontSize = 30;
-    private const float TranslationFontSize = 19;
+    /// <summary>行距和翻译间距随字号缩放。</summary>
+    private float RowGap => _fontSize * 0.86f;
+    private float TranslationGap => _fontSize * 0.2f;
+    private float _fontSize = 30;
+    private float TranslationFontSize => MathF.Round(_fontSize * 0.63f);
 
     // —— 位置与渐隐 ——
     /// <summary>当前行中心在视口中的高度比例（从上往下）：略高于正中。</summary>
@@ -126,6 +127,39 @@ public sealed partial class LyricsView : UserControl
 
     public Lyrics? Lyrics => _lyrics;
 
+    private double _focusY = double.NaN;
+
+    /// <summary>当前行中心在控件里的高度（DIP）。NaN 表示按默认比例。主窗口用它让当前行和封面中心对齐。</summary>
+    public double FocusY
+    {
+        get => _focusY;
+        set
+        {
+            if (double.IsNaN(value) && double.IsNaN(_focusY)) return;
+            if (Math.Abs(value - _focusY) < 0.5) return;
+            _focusY = value;
+            _needsSnap = true;
+            Canvas.Invalidate();
+        }
+    }
+
+    /// <summary>歌词字号（DIP），随窗口大小由主窗口设置；翻译、行距按比例跟随。</summary>
+    public double LineFontSize
+    {
+        get => _fontSize;
+        set
+        {
+            float size = (float)Math.Round(Math.Clamp(value, 16, 56));
+            if (size == _fontSize) return;
+            _fontSize = size;
+            _mainFormat?.Dispose();
+            _translationFormat?.Dispose();
+            _mainFormat = _translationFormat = null;
+            _layoutWidth = -1; // 下一帧按新字号重新排版
+            Canvas.Invalidate();
+        }
+    }
+
     private double Now => _clock.Elapsed.TotalSeconds;
 
     // ───────────────────────── 内容 ─────────────────────────
@@ -171,7 +205,7 @@ public sealed partial class LyricsView : UserControl
         _mainFormat ??= new CanvasTextFormat
         {
             FontFamily = "Segoe UI Variable Display",
-            FontSize = MainFontSize,
+            FontSize = _fontSize,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             WordWrapping = CanvasWordWrapping.Wrap,
         };
@@ -201,7 +235,8 @@ public sealed partial class LyricsView : UserControl
         _needsSnap = true; // 行高变了，位置要重新算（不做动画）
     }
 
-    private float FocusY => (float)Canvas.ActualHeight * FocusRatio;
+    /// <summary>当前行中心停在哪个高度：主窗口给出（和封面中心对齐），否则按比例。</summary>
+    private float FocusLine => double.IsNaN(_focusY) ? (float)Canvas.ActualHeight * FocusRatio : (float)_focusY;
 
     private static float Center(Row r) => r.Top + r.Height / 2;
 
@@ -210,7 +245,7 @@ public sealed partial class LyricsView : UserControl
     {
         if (_rows.Count == 0) return 0;
         if (_lyrics is { IsSynced: false }) return -(float)Canvas.ActualHeight * 0.2f;
-        return Center(_rows[Math.Max(0, _active)]) - FocusY;
+        return Center(_rows[Math.Max(0, _active)]) - FocusLine;
     }
 
     private (float Min, float Max) ScrollRange()
@@ -222,7 +257,7 @@ public sealed partial class LyricsView : UserControl
             float min = -h * 0.2f;
             return (min, Math.Max(min, _rows[^1].Top + _rows[^1].Height - h * 0.7f));
         }
-        return (Center(_rows[0]) - FocusY, Center(_rows[^1]) - FocusY);
+        return (Center(_rows[0]) - FocusLine, Center(_rows[^1]) - FocusLine);
     }
 
     // ───────────────────────── 滚动动画 ─────────────────────────

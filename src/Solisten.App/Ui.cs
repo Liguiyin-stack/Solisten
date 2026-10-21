@@ -19,6 +19,9 @@ public static class Ui
 
     public static Thickness LensThickness(bool focused) => new(focused ? 2 : 0);
 
+    /// <summary>选中但不是正在播放的卡片上显示 ▶：再点一下就播放。</summary>
+    public static Visibility PlayHint(bool focused, bool playing) => focused && !playing ? Visibility.Visible : Visibility.Collapsed;
+
     public static double AvailableOpacity(bool available) => available ? 1 : 0.4;
 
     public static ImageSource? Thumb(string? path)

@@ -6,6 +6,10 @@
     <RootNamespace>Solisten.App</RootNamespace>
     <AssemblyName>Solisten</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\Solisten.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+    <Product>Solisten</Product>
+    <Description>一首歌，一个空间。Windows 原生聆听画布。</Description>
     <UseWinUI>true</UseWinUI>
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
@@ -27,6 +31,9 @@
     <PackageReference Include="Microsoft.WindowsAppSDK" />
     <PackageReference Include="Microsoft.Graphics.Win2D" />
     <PackageReference Include="CommunityToolkit.Mvvm" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="Assets\Solisten.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <!-- 许可证：设置 → 关于 → 查看许可证 -->
   <ItemGroup>

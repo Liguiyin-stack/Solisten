@@ -6,6 +6,7 @@ using Microsoft.UI.Input;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Solisten.App.Services;
@@ -49,6 +50,8 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
 
         ExtendsContentIntoTitleBar = true;
+        // 任务栏、Alt+Tab 和标题栏的图标（exe 本身的图标由 csproj 的 ApplicationIcon 嵌入）
+        AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "Solisten.ico"));
         SetTitleBar(TitleBar);
         RestoreWindowBounds();
 
@@ -99,11 +102,17 @@ public sealed partial class MainWindow : Window
         };
         _tick.Start();
         InitLyrics();
+        InitPointer();
 
         _hideControls = DispatcherQueue.CreateTimer();
         _hideControls.Interval = ControlsIdle;
         _hideControls.IsRepeating = false;
-        _hideControls.Tick += (_, _) => ViewModel.Dispatch(new HideControls());
+        _hideControls.Tick += (_, _) =>
+        {
+            // 鼠标还停在进度或控制上：再等一轮
+            if (PointerOverBottom()) { _hideControls.Start(); return; }
+            ViewModel.Dispatch(new HideControls());
+        };
 
         _hideToast = DispatcherQueue.CreateTimer();
         _hideToast.Interval = TimeSpan.FromSeconds(3);
@@ -311,9 +320,9 @@ public sealed partial class MainWindow : Window
         if (Root.ActualHeight <= 0 || Root.ActualWidth <= 0 || Stage.ActualHeight <= 0 || Stage.ActualWidth <= 0) return;
         var origin = Stage.TransformToVisual(Root).TransformPoint(new Windows.Foundation.Point(0, 0));
         // 舞台可能因侧边面板而变窄：封面以舞台（而不是整个窗口）为准居中和取大小
-        // 歌词模式下舞台只有左半边：封面按左栏取大小（占左栏宽度的六成）
+        // 歌词模式下舞台就是封面本身（由 LayoutLyrics 定好边长）
         double side = _lyricsMode
-            ? Math.Max(80, Math.Min(Stage.ActualWidth * 0.62, Stage.ActualHeight * 0.78))
+            ? Math.Max(80, Math.Min(Stage.ActualWidth, Stage.ActualHeight))
             : CoverSide(Stage.ActualWidth, Stage.ActualHeight);
         Space.SetStage(
             (float)((origin.X + Stage.ActualWidth / 2) / Root.ActualWidth),
@@ -340,7 +349,7 @@ public sealed partial class MainWindow : Window
         LyricsPanel.Ink = (Microsoft.UI.Xaml.Media.Brush)Root.Resources["InkBrush"];
         LyricsPanel.SeekRequested += position => ViewModel.Dispatch(new Seek(position));
         LyricsButton.IsChecked = _host.Settings.ShowLyrics;
-        CanvasLayer.SizeChanged += (_, _) => ApplyLyricsLayout();
+        StageArea.SizeChanged += (_, _) => ApplyLyricsLayout();
         _lyricsTick = DispatcherQueue.CreateTimer();
         _lyricsTick.Interval = TimeSpan.FromMilliseconds(80);
         _lyricsTick.Tick += (_, _) =>
@@ -379,20 +388,84 @@ public sealed partial class MainWindow : Window
     {
         LyricsButton.IsChecked = _host.Settings.ShowLyrics;
         bool show = _host.Settings.ShowLyrics && LyricsPanel.Lyrics is { IsEmpty: false } && CanvasLayer.ActualWidth >= MinLyricsCanvasWidth;
-        if (show != _lyricsMode)
+        bool changed = show != _lyricsMode;
+        if (changed)
         {
             _lyricsMode = show;
-            LyricsColumn.Width = show ? new GridLength(1.15, GridUnitType.Star) : new GridLength(0);
             LyricsPanel.Visibility = Ui.Visible(show);
             LyricsIdentity.Visibility = Ui.Visible(show);
             Identity.Visibility = Ui.Collapsed(show);
-            // 列宽改了但布局还没重算：先完成布局再告诉聆听空间封面的新位置，布局结束后再补一次。
+        }
+        if (show) LayoutLyrics();
+        else if (changed) ResetStageLayout();
+
+        if (changed)
+        {
+            // 布局还没重算：先完成布局再告诉聆听空间封面的新位置
             CanvasLayer.UpdateLayout();
             UpdateStage();
-            DispatcherQueue.Run(UpdateStage, Microsoft.UI.Dispatching.DispatcherQueuePriority.Low);
         }
+        // 封面组可能只是移动了位置（大小不变，舞台不会触发 SizeChanged）：布局结束后补一次
+        if (show || changed) DispatcherQueue.Run(UpdateStage, Microsoft.UI.Dispatching.DispatcherQueuePriority.Low);
+
         if (show && LyricsPanel.Lyrics is { IsSynced: true }) _lyricsTick?.Start();
         else _lyricsTick?.Stop();
+    }
+
+    /// <summary>
+    /// 歌词模式的版式（按舞台区大小计算）：
+    /// <list type="bullet">
+    /// <item>左右留白约为宽度的 7%，两栏之间约 6%；左栏占可用宽度的 42%，右栏是歌词；</item>
+    /// <item>左栏里"封面 + 歌名"作为一组垂直居中，封面尽量大，歌名与封面左边缘对齐；</item>
+    /// <item>歌词的当前行和封面中心在同一高度；字号随舞台高度缩放。</item>
+    /// </list>
+    /// </summary>
+    private void LayoutLyrics()
+    {
+        double w = StageArea.ActualWidth, h = StageArea.ActualHeight;
+        if (w <= 0 || h <= 0) return;
+        double margin = Math.Clamp(w * 0.07, 40, 160);
+        double gap = Math.Clamp(w * 0.06, 40, 120);
+        double usable = Math.Max(240, w - margin * 2 - gap);
+        double left = usable * 0.42;
+
+        // 封面越大歌名越大；先按左栏宽度估一个字号量出歌名高度，再定封面边长
+        double guess = Math.Min(left, h * 0.72);
+        LyricsTitle.FontSize = Math.Round(Math.Clamp(guess * 0.068, 18, 30));
+        LyricsSubtitle.FontSize = Math.Round(Math.Clamp(guess * 0.04, 13, 18));
+        LyricsIdentity.Measure(new Windows.Foundation.Size(Math.Max(80, guess), double.PositiveInfinity));
+        double identity = LyricsIdentity.DesiredSize.Height;
+        double side = Math.Floor(Math.Clamp(Math.Min(left, h * 0.9 - identity), 140, 640));
+        // 底部的进度和控制无操作时会淡出：按"舞台区 + 底部"的整体高度居中，看起来不头重脚轻；
+        // 但不压到底部（进度出现时不重叠），并留一点间隙。
+        double below = Math.Max(0, CanvasLayer.ActualHeight - StageArea.TransformToVisual(CanvasLayer).TransformPoint(new Windows.Foundation.Point(0, 0)).Y - h);
+        double group = side + identity;
+        double top = Math.Max(0, Math.Round(Math.Min((h + below - group) / 2, h - group - 16)));
+
+        StageColumn.Width = new GridLength(margin + left);
+        LyricsColumn.Width = new GridLength(1, GridUnitType.Star);
+        StageRow.Height = new GridLength(side);
+        StageGroup.HorizontalAlignment = HorizontalAlignment.Left;
+        StageGroup.VerticalAlignment = VerticalAlignment.Top;
+        StageGroup.Width = side;
+        StageGroup.Margin = new Thickness(Math.Round(margin + (left - side) / 2), top, 0, 0);
+
+        LyricsPanel.Margin = new Thickness(gap, 0, margin, 0);
+        LyricsPanel.FocusY = top + side / 2;
+        LyricsPanel.LineFontSize = Math.Clamp(h * 0.052, 22, 42);
+    }
+
+    /// <summary>回到没有歌词时的版式：舞台铺满，封面居中。</summary>
+    private void ResetStageLayout()
+    {
+        StageColumn.Width = new GridLength(1, GridUnitType.Star);
+        LyricsColumn.Width = new GridLength(0);
+        StageRow.Height = new GridLength(1, GridUnitType.Star);
+        StageGroup.HorizontalAlignment = HorizontalAlignment.Stretch;
+        StageGroup.VerticalAlignment = VerticalAlignment.Stretch;
+        StageGroup.Width = double.NaN;
+        StageGroup.Margin = new Thickness(0);
+        LyricsPanel.FocusY = double.NaN;
     }
 
     private void OnLyricsClick(object sender, RoutedEventArgs e)
@@ -438,21 +511,8 @@ public sealed partial class MainWindow : Window
         var margin = new Thickness(0, 40, side && roomy ? SidePanelWidth : 0, 0);
         if (CanvasLayer.Margin != margin) CanvasLayer.Margin = margin;
 
-        bool hideBottom = _host.Store.State.Layer == Layer.Navigate || (side && !roomy);
-        foreach (var e in new UIElement[] { Progress, TimeLabel })
-        {
-            e.Opacity = hideBottom ? 0 : 1;
-            e.IsHitTestVisible = !hideBottom;
-        }
-        if (hideBottom)
-        {
-            RevealBar.Opacity = 0;
-            RevealBar.IsHitTestVisible = false;
-        }
-        else
-        {
-            ApplyControlsRevealed(_host.Store.State.Canvas.ControlsRevealed);
-        }
+        _bottomBlocked = _host.Store.State.Layer == Layer.Navigate || (side && !roomy);
+        ApplyControlsRevealed(_host.Store.State.Canvas.ControlsRevealed);
     }
 
     private void SetGlassFor(string key, FrameworkElement panel, GlassAttach attach, bool highContrast)
@@ -493,21 +553,123 @@ public sealed partial class MainWindow : Window
         _hideControls.Start();
     }
 
+    /// <summary>导航带打开，或侧边面板在窄窗口里盖住了画布：底部的进度、时间和控制不显示。</summary>
+    private bool _bottomBlocked;
+    private Windows.Foundation.Point? _pointer;
+
+    /// <summary>
+    /// 底部一组（进度线、时间、控制按钮）：有操作时淡入，无操作 2.5 秒后一起淡出；
+    /// 高对比度下进度和时间常驻（控制按钮仍然跟随操作）。
+    /// </summary>
     private void ApplyControlsRevealed(bool revealed)
     {
-        if (_host.Store.State.Layer == Layer.Navigate) revealed = false;
-        double o = revealed ? 1 : 0;
-        RevealBar.Opacity = o;
-        RevealBar.IsHitTestVisible = revealed;
+        bool info = !_bottomBlocked && (revealed || _accessibility.HighContrast);
+        bool controls = !_bottomBlocked && revealed && _host.Store.State.Layer != Layer.Navigate;
+        foreach (var e in new UIElement[] { Progress, TimeLabel })
+        {
+            e.Opacity = info ? 1 : 0;
+            e.IsHitTestVisible = info;
+        }
+        RevealBar.Opacity = controls ? 1 : 0;
+        RevealBar.IsHitTestVisible = controls;
+    }
+
+    /// <summary>鼠标停在底部一组上（例如正要拖动进度、调音量）：不要在它下面淡出。</summary>
+    private bool PointerOverBottom()
+    {
+        if (_pointer is not { } p) return false;
+        foreach (var e in new FrameworkElement[] { Progress, TimeLabel, RevealBar })
+        {
+            if (e.ActualWidth <= 0) continue;
+            var r = e.TransformToVisual(Root).TransformBounds(new Windows.Foundation.Rect(0, 0, e.ActualWidth, e.ActualHeight));
+            if (r.Contains(p)) return true;
+        }
+        return false;
     }
 
     private void OnRootPointerMoved(object sender, PointerRoutedEventArgs e)
     {
         Reveal();
-        Space.SetPointer(e.GetCurrentPoint(Root).Position);
+        var p = e.GetCurrentPoint(Root).Position;
+        _pointer = p;
+        Space.SetPointer(p);
     }
 
-    private void OnRootPointerExited(object sender, PointerRoutedEventArgs e) => Space.SetPointer(null);
+    private void OnRootPointerExited(object sender, PointerRoutedEventArgs e)
+    {
+        _pointer = null;
+        Space.SetPointer(null);
+    }
+
+    // ───────────────────────── 鼠标：面板的打开与关闭 ─────────────────────────
+    //
+    // 规则：
+    // · 目录（导航带）、资料、设置三个面板同一时间只开一个，打开一个会关掉其他的；
+    // · Esc、鼠标侧键"后退"、点画面空白处，都关闭当前打开的面板；
+    // · 点按钮、进度条、歌词等控件时执行它们自己的操作，不顺带关闭面板；
+    // · 没有面板时，双击画面空白处切换全屏。
+
+    private long _dismissedAt;
+
+    private void InitPointer()
+    {
+        Root.Tapped += OnRootTapped;
+        Root.DoubleTapped += OnRootDoubleTapped;
+        // 侧键：按钮等控件会把 PointerPressed 标为已处理，所以要连已处理的事件一起接收。
+        Root.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(OnRootPointerPressed), handledEventsToo: true);
+        // 卡片按下时的双击判断：卡片里的元素可能已经处理了按下事件，所以连已处理的一起接收。
+        Ribbon.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(OnRibbonPointerPressed), handledEventsToo: true);
+    }
+
+    /// <summary>当前有面板打开。</summary>
+    private bool SurfaceOpen => SettingsSheet.Visibility == Visibility.Visible || _host.Store.State.Layer != Layer.Listen;
+
+    /// <summary>关闭最上面的面板；没有面板时返回 false。</summary>
+    private bool CloseTopSurface()
+    {
+        if (SettingsSheet.Visibility == Visibility.Visible) CloseSettings();
+        else if (_host.Store.State.Layer == Layer.Navigate) ViewModel.Dispatch(new CancelNavigate());
+        else if (_host.Store.State.Layer == Layer.Info) ViewModel.Dispatch(new ExitLayer());
+        else return false;
+        _dismissedAt = Environment.TickCount64;
+        Root.Focus(FocusState.Programmatic);
+        return true;
+    }
+
+    /// <summary>这次点击落在面板或可操作的控件上（而不是画面空白处）。</summary>
+    private bool IsOnInteractive(object? source)
+    {
+        UIElement[] interactive = [SettingsSheet, InfoLayer, NavigateLayer, RevealBar, Progress, LyricsPanel, TitleBar, EmptyGuide];
+        for (var d = source as DependencyObject; d is not null; d = VisualTreeHelper.GetParent(d))
+        {
+            if (d is ButtonBase or TextBox or ComboBox or Slider) return true;
+            if (d is UIElement u && Array.IndexOf(interactive, u) >= 0) return true;
+        }
+        return false;
+    }
+
+    private void OnRootTapped(object sender, TappedRoutedEventArgs e)
+    {
+        if (e.Handled || IsOnInteractive(e.OriginalSource)) return;
+        if (CloseTopSurface()) e.Handled = true;
+    }
+
+    private void OnRootDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    {
+        if (e.Handled || IsOnInteractive(e.OriginalSource) || SurfaceOpen) return;
+        // 第一下刚关掉了面板：这不是"双击全屏"。
+        if (Environment.TickCount64 - _dismissedAt < 600) return;
+        ToggleFullScreen();
+        e.Handled = true;
+    }
+
+    private void OnRootPointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        var props = e.GetCurrentPoint(Root).Properties;
+        if (!props.IsXButton1Pressed) return;
+        // 侧键"后退"：关闭当前面板；没有面板时不做任何事（不切歌，避免误触）。
+        if (CloseTopSurface()) e.Handled = true;
+    }
 
     // ───────────────────────── 输入映射（§8.5） ─────────────────────────
 
@@ -516,8 +678,8 @@ public sealed partial class MainWindow : Window
         bool ctrl = IsDown(VirtualKey.Control);
         if (SettingsSheet.Visibility == Visibility.Visible)
         {
-            // 设置打开时按键交给设置里的控件；Esc 关闭（下拉框展开时由下拉框自己处理 Esc）。
-            if (e.Key == VirtualKey.Escape && !e.Handled)
+            // 设置打开时按键交给设置里的控件；Esc 和 Ctrl+, 关闭（下拉框展开时由下拉框自己处理 Esc）。
+            if ((e.Key == VirtualKey.Escape || (ctrl && e.Key == (VirtualKey)188)) && !e.Handled)
             {
                 CloseSettings();
                 e.Handled = true;
@@ -642,6 +804,8 @@ public sealed partial class MainWindow : Window
 
     private void OnLayerChanged(Layer layer)
     {
+        // 同一时间只开一个面板：进入目录或资料时关掉设置。
+        if (layer != Layer.Listen && SettingsSheet.Visibility == Visibility.Visible) CloseSettings();
         NavigateLayer.Visibility = Ui.Visible(layer == Layer.Navigate);
         InfoLayer.Visibility = Ui.Visible(layer == Layer.Info);
         // 导航带打开时隐藏底部的进度、时间和控制（透明玻璃下面不要透出来）；侧边面板打开时画布让位
@@ -667,9 +831,14 @@ public sealed partial class MainWindow : Window
         if (layer == Layer.Info) FillInfo();
     }
 
+    /// <summary>上一次用鼠标选中卡片的时刻（0 表示没有）。</summary>
+    private long _pointerSelectedAt;
+
     private void BringFocusIntoView(int index)
     {
         if (index < 0 || index >= ViewModel.RibbonItems.Count) return;
+        // 用鼠标点选的卡片本来就在鼠标下面：不滚动，否则双击的第二下会落到别的卡片上。
+        if (_pointerSelectedAt != 0 && Environment.TickCount64 - _pointerSelectedAt < 400) { _pointerSelectedAt = 0; return; }
         DispatcherQueue.Run(() =>
         {
             var el = Ribbon.GetOrCreateElement(index);
@@ -687,28 +856,131 @@ public sealed partial class MainWindow : Window
         e.Handled = true;
     }
 
-    private RibbonItem? ItemFrom(object? source)
+    private RibbonItem? ItemFrom(object? source) => CardFrom(source).Item;
+
+    /// <summary>
+    /// 点到的是哪张卡片（卡片元素和它的数据）。卡片模板用 x:Bind，ItemsRepeater 不会给卡片设置 DataContext，
+    /// 所以往上找到 ItemsRepeater 的直接子元素，再按它在列表中的位置取数据。
+    /// </summary>
+    private (FrameworkElement? Element, RibbonItem? Item) CardFrom(object? source)
     {
         for (var d = source as DependencyObject; d is not null; d = VisualTreeHelper.GetParent(d))
         {
-            if (d is FrameworkElement { DataContext: RibbonItem item }) return item;
-            if (ReferenceEquals(d, Ribbon)) break;
+            if (VisualTreeHelper.GetParent(d) is not { } parent || !ReferenceEquals(parent, Ribbon)) continue;
+            if (d is not UIElement card) break;
+            int index = Ribbon.GetElementIndex(card);
+            return index >= 0 && index < ViewModel.RibbonItems.Count ? (card as FrameworkElement, ViewModel.RibbonItems[index]) : (null, null);
         }
-        return null;
+        return (null, null);
     }
 
+    // ───────────────────────── 目录带：鼠标点击 ─────────────────────────
+    //
+    // 双击不依赖 WinUI 的 DoubleTapped 手势（会被卡片里的元素和焦点变化打断），
+    // 而是在按下鼠标时自己判断：同一张卡片、系统双击时间内、位置几乎不变的第二次按下就是双击。
+
+    /// <summary>上一次在卡片上按下左键：哪一首、第几张、什么时候、在哪里。</summary>
+    private (TrackId Track, int Index, long At, Windows.Foundation.Point Position)? _lastPress;
+    /// <summary>双击已经处理过：在这个时刻之前到来的 Tapped / DoubleTapped 忽略。</summary>
+    private long _ignoreTapsUntil;
+
+    [System.Runtime.InteropServices.LibraryImport("user32.dll")]
+    private static partial uint GetDoubleClickTime();
+
+    /// <summary>用鼠标选中一张卡片（不滚动目录带）。</summary>
+    private void SelectByPointer(RibbonItem item)
+    {
+        if (_host.Store.State.Focus is not { } f || item.Index == f.Index) return;
+        _pointerSelectedAt = Environment.TickCount64;
+        ViewModel.Dispatch(new MoveFocus(item.Index - f.Index));
+    }
+
+    private void PlayByPointer(RibbonItem item)
+    {
+        _dismissedAt = Environment.TickCount64;
+        SelectByPointer(item);
+        ViewModel.Dispatch(new ConfirmFocus());
+    }
+
+    private void OnRibbonPointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        var point = e.GetCurrentPoint(Ribbon);
+        if (!point.Properties.IsLeftButtonPressed || _host.Store.State.Layer != Layer.Navigate) return;
+        if (ItemFrom(e.OriginalSource) is not { } item) { _lastPress = null; return; }
+
+        long now = Environment.TickCount64;
+        if (_lastPress is { } last && last.Track == item.Track && last.Index == item.Index
+            && now - last.At <= GetDoubleClickTime()
+            && Math.Abs(point.Position.X - last.Position.X) <= 8 && Math.Abs(point.Position.Y - last.Position.Y) <= 8)
+        {
+            _lastPress = null;
+            _ignoreTapsUntil = now + 600;
+            PlayByPointer(item);
+            e.Handled = true;
+            return;
+        }
+        _lastPress = (item.Track, item.Index, now, point.Position);
+    }
+
+    /// <summary>单击：选中这张卡片；单击已经选中的卡片：播放它（选中的卡片上有 ▶ 提示）。</summary>
     private void OnRibbonTapped(object sender, TappedRoutedEventArgs e)
     {
-        if (ItemFrom(e.OriginalSource) is not { } item) return;
-        var focus = _host.Store.State.Focus;
-        if (focus is not null) ViewModel.Dispatch(new MoveFocus(item.Index - focus.Index));
+        e.Handled = true;
+        if (Environment.TickCount64 < _ignoreTapsUntil) return;
+        if (_host.Store.State.Layer != Layer.Navigate || ItemFrom(e.OriginalSource) is not { } item || _host.Store.State.Focus is not { } focus) return;
+        if (item.Index == focus.Index)
+        {
+            _dismissedAt = Environment.TickCount64; // 目录会关闭：紧接着的第二下不要当成"双击空白处全屏"
+            ViewModel.Dispatch(new ConfirmFocus());
+        }
+        else SelectByPointer(item);
         Root.Focus(FocusState.Programmatic);
     }
 
+    /// <summary>双击手势：按下时已经处理过了；只在按下判断没赶上时（例如触摸屏）作为后备。</summary>
     private void OnRibbonDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
-        if (ItemFrom(e.OriginalSource) is null) return;
-        ViewModel.Dispatch(new ConfirmFocus());
+        e.Handled = true;
+        if (Environment.TickCount64 < _ignoreTapsUntil) return;
+        if (_host.Store.State.Layer != Layer.Navigate || ItemFrom(e.OriginalSource) is not { } item) return;
+        _ignoreTapsUntil = Environment.TickCount64 + 600;
+        PlayByPointer(item);
+    }
+
+
+    /// <summary>右键：选中这张卡片并弹出菜单（播放、收藏、打开文件位置）。</summary>
+    private void OnRibbonRightTapped(object sender, RightTappedRoutedEventArgs e)
+    {
+        var (element, item) = CardFrom(e.OriginalSource);
+        if (element is null || item is null || _host.Store.State.Focus is not { } focus) return;
+        e.Handled = true;
+        SelectByPointer(item);
+
+        var track = _host.Store.State.Library.Find(item.Track);
+        var menu = new MenuFlyout();
+        void Add(string text, string glyph, Action action, bool enabled = true)
+        {
+            var mi = new MenuFlyoutItem { Text = text, Icon = new FontIcon { Glyph = glyph }, IsEnabled = enabled };
+            mi.Click += (_, _) => action();
+            menu.Items.Add(mi);
+        }
+
+        bool isPlaying = _host.Store.State.Playing?.Track == item.Track;
+        Add(isPlaying ? "正在播放" : "播放", "\uE768", () => ViewModel.Dispatch(new ConfirmFocus()), enabled: item.Available && !isPlaying);
+        if (track is not null && !track.Id.IsRemote)
+        {
+            bool favorite = _host.Store.State.Library.User(track.Id).Favorite;
+            Add(favorite ? "取消收藏" : "收藏", favorite ? "\uE735" : "\uE734", () => ViewModel.Dispatch(new ToggleFavorite(track.Id)));
+            menu.Items.Add(new MenuFlyoutSeparator());
+            Add("在资源管理器中显示", "\uE838", () => Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{track.Path}\"") { UseShellExecute = false }),
+                enabled: track.Available);
+        }
+        else if (track is not null)
+        {
+            menu.Items.Add(new MenuFlyoutSeparator());
+            Add("在网易云音乐中打开", "\uE774", () => Process.Start(new ProcessStartInfo($"https://music.163.com/song?id={-track.Id.Value}") { UseShellExecute = true }));
+        }
+        menu.ShowAt(element, e.GetPosition(element));
     }
 
     private void OnSearchTextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
@@ -842,7 +1114,14 @@ public sealed partial class MainWindow : Window
     private void OnPreviousClick(object sender, RoutedEventArgs e) { ViewModel.Dispatch(new Previous()); Root.Focus(FocusState.Programmatic); }
     private void OnNextClick(object sender, RoutedEventArgs e) { ViewModel.Dispatch(new Next()); Root.Focus(FocusState.Programmatic); }
     private void OnRepeatClick(object sender, RoutedEventArgs e) { ViewModel.Dispatch(new ToggleRepeatOne()); Root.Focus(FocusState.Programmatic); }
-    private void OnNavigateClick(object sender, RoutedEventArgs e) { ViewModel.Dispatch(new EnterNavigate()); Root.Focus(FocusState.Programmatic); }
+    private void OnNavigateClick(object sender, RoutedEventArgs e)
+    {
+        ViewModel.Dispatch(_host.Store.State.Layer == Layer.Navigate ? new CancelNavigate() : new EnterNavigate());
+        Root.Focus(FocusState.Programmatic);
+    }
+
+    private void OnNavigateCloseClick(object sender, RoutedEventArgs e) { ViewModel.Dispatch(new CancelNavigate()); Root.Focus(FocusState.Programmatic); }
+    private void OnReturnToPlayingClick(object sender, RoutedEventArgs e) { ViewModel.Dispatch(new ReturnFocusToPlaying()); Root.Focus(FocusState.Programmatic); }
     private void OnInfoClick(object sender, RoutedEventArgs e) => ViewModel.Dispatch(_host.Store.State.Layer == Layer.Info ? new ExitLayer() : new EnterInfo());
     private void OnInfoCloseClick(object sender, RoutedEventArgs e) { ViewModel.Dispatch(new ExitLayer()); Root.Focus(FocusState.Programmatic); }
 
@@ -874,7 +1153,12 @@ public sealed partial class MainWindow : Window
 
     // ───────────────────────── 设置 ─────────────────────────
 
-    private void OnSettingsClick(object sender, RoutedEventArgs e) => OpenSettings();
+    /// <summary>设置按钮：开着就关，关着就开。</summary>
+    private void OnSettingsClick(object sender, RoutedEventArgs e)
+    {
+        if (SettingsSheet.Visibility == Visibility.Visible) CloseSettings();
+        else OpenSettings();
+    }
 
     private void OpenSettings()
     {
