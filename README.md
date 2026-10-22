@@ -91,9 +91,6 @@ dotnet build src/Solisten.App      # 生成 src/Solisten.App/bin/x64/Debug/.../S
 | `Solisten.Integrations.NetEase` | 网易云音乐：扫码登录、歌单同步、在线播放地址、歌词 |
 | `Solisten.App` | WinUI 3 窗口、三层界面、整屏歌词、设置、输入、SMTC |
 
-设计文档：[docs/design-windows.md](docs/design-windows.md)、[docs/design-netease-sync.md](docs/design-netease-sync.md)；
-实施记录：[docs/implementation-plan.md](docs/implementation-plan.md)。
-
 ## 第三方
 
 FFmpeg（LGPL 2.1+，动态链接）、TagLib#（LGPL 2.1）、Win2D、Windows App SDK、CommunityToolkit.Mvvm、
