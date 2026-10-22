@@ -74,9 +74,6 @@ dotnet build src/Solisten.App      # 生成 src/Solisten.App/bin/x64/Debug/.../S
 
 ```sh
 ./scripts/build-installer.sh 1.0.0 # 生成 artifacts/Solisten-Setup-1.0.0-x64.exe
-```
-
-重新生成图标：`dotnet run --project scripts/icon -- src/Solisten.App/Assets`。
 
 运行时可以把音乐文件夹作为参数传入（会加入曲库）。环境变量：
 
